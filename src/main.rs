@@ -137,12 +137,15 @@ impl<'a> Scanner<'a> {
         self.iter.peek().map(|&(_, c)| c)
     }
 
+    fn peekn(&mut self, n: usize) -> Option<char> {
+        self.iter.peekn(n).map(|&(_, c)| c)
+    }
+
     fn token_end(&mut self) -> usize {
         self.iter.peek().map(|&(i, _)| i).unwrap_or(self.source.len() - 1)
     }
 
 	fn eatwhitespace(&mut self) {
-		self.iter.reset_peek();
 		self.advance_while(|&c| {
 			c == '\n' || c == '\t' || c == ' '
 		});
@@ -213,8 +216,6 @@ impl<'a> Scanner<'a> {
 			_ => panic!("Unexpected character.")
 		};
 
-		// Why is this needed
-		self.iter.reset_peek();
 		let end = self.token_end();
 
         let token = Token {
@@ -231,7 +232,6 @@ impl<'a> Scanner<'a> {
 			if f(&c) {
 				self.advance();
 			} else {
-				self.iter.reset_peek();
 				break;
 			}
 		}
@@ -258,9 +258,7 @@ impl<'a> Scanner<'a> {
 
 		// Look for a fractional part
 		let first = self.peek();
-		let second = self.peek();
-
-		self.iter.reset_peek();
+		let second = self.peekn(1);
 
 		if let (Some('.'), Some('0'...'9')) = (first, second) {
 			// Consume the '.'
@@ -274,13 +272,7 @@ impl<'a> Scanner<'a> {
     }
 
 	fn is_at_end(&mut self) -> bool {
-		match self.peek() {
-			None => true,
-			_ => {
-				self.iter.reset_peek();
-				false
-			}
-		}
+		self.peek().is_none()
 	}
 
 	fn string(&mut self, start: usize) -> TokenType {
@@ -291,7 +283,6 @@ impl<'a> Scanner<'a> {
 			panic!("Unterminated String");
 		}
 		let end = self.token_end();
-		self.iter.reset_peek();
 		let val = (&self.source[start+1..end-1]).to_string();
 		TokenType::String(val)
 	}
