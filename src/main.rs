@@ -26,9 +26,19 @@ fn run_file(filename: &str) -> Result<(), Box<Error>> {
     let mut contents = String::new();
     file.read_to_string(&mut contents)?;
 
-    let mut scanner = Scanner::new(&contents);
+    let scanner = Scanner::new(&contents);
+    let tokens = scanner.filter(|t| {
+        if let &Ok(Token{ty: TokenType::Comment, ..}) = t {
+            false
+        } else {
+            true
+        }
+    }).collect::<Result<Vec<Token>, _>>()?;
 
-    scanner.scan()?;
+    for token in tokens {
+        println!("{:?}", token);
+    }
+
     Ok(())
 }
 
@@ -40,7 +50,7 @@ pub struct Token<'a> {
 	pub end: usize,
 }
 
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub enum TokenType {
     LeftParen,
     RightParen,
@@ -61,13 +71,14 @@ pub enum TokenType {
     GreaterThan,
     GreaterThanEq,
     Slash,
+    Comment,
 	String(String),
 	Number(f64),
 	Identifier,
 	Keyword(Keyword),
 }
 
-#[derive(Debug)]
+#[derive(PartialEq, Eq, Debug)]
 pub enum Keyword {
 	Class,
 	Var,
@@ -151,12 +162,12 @@ impl<'a> Scanner<'a> {
 		});
 	}
 
-    fn token(&mut self) -> Result<Option<Token<'a>>, Box<Error>> {
+    fn scan_token(&mut self) -> Option<Result<Token<'a>, Box<Error>>> {
 		self.eatwhitespace();
 
 		let c = self.advance();
 		if c.is_none() {
-			return Ok(None)
+			return None
 		}
 		let (start, c) = c.unwrap();
 
@@ -171,7 +182,16 @@ impl<'a> Scanner<'a> {
 			'-' => TokenType::Minus,
 			';' => TokenType::Semicolon,
 			'*' => TokenType::Star,
-			'/' => TokenType::Slash,
+			'/' => {
+                if let Some('/') = self.peek() {
+                    // This is a comment.
+                    self.advance_while(|&c| c != '\n');
+                    self.advance();
+                    TokenType::Comment
+                } else {
+                    TokenType::Slash
+                }
+            },
 			'!' => {
 				if let Some('=') = self.peek() {
 					self.advance();
@@ -224,7 +244,7 @@ impl<'a> Scanner<'a> {
 			end : end,
 			value: &self.source[start..end].trim_right()
 		};
-        Ok(Some(token))
+        Some(Ok(token))
     }
 
 	fn advance_while<F>(&mut self, f: F) where for<'r> F: Fn(&'r char,) -> bool {
@@ -286,15 +306,12 @@ impl<'a> Scanner<'a> {
 		let val = (&self.source[start+1..end-1]).to_string();
 		TokenType::String(val)
 	}
+}
 
-    pub fn scan(&mut self) -> Result<Vec<Token>, Box<Error>> {
-        let mut tokens = Vec::new();
+impl<'a> Iterator for Scanner<'a> {
+    type Item = Result<Token<'a>, Box<Error>>;
 
-        while let Ok(Some(token)) = self.token() {
-            println!("{:?}", token);
-            tokens.push(token);
-        }
-
-        Ok(tokens)
+    fn next(&mut self) -> Option<Self::Item> {
+        self.scan_token()
     }
 }
