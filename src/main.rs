@@ -44,14 +44,15 @@ fn run_file(filename: &str) -> Result<(), Box<Error>> {
 
 #[derive(Debug)]
 pub struct Token<'a> {
-    pub ty: TokenType,
+    pub ty: TokenType<'a>,
     pub value: &'a str,
 	pub start: usize,
 	pub end: usize,
+    pub line: usize,
 }
 
 #[derive(PartialEq, Debug)]
-pub enum TokenType {
+pub enum TokenType<'s> {
     LeftParen,
     RightParen,
     LeftBrace,
@@ -72,7 +73,7 @@ pub enum TokenType {
     GreaterThanEq,
     Slash,
     Comment,
-	String(String),
+	String(&'s str),
 	Number(f64),
 	Identifier,
 	Keyword(Keyword),
@@ -126,6 +127,7 @@ struct Scanner<'a> {
     source: &'a str,
     iter: MultiPeek<CharIndices<'a>>,
     current: usize,
+    line: usize,
 }
 
 impl<'a> Scanner<'a> {
@@ -134,12 +136,16 @@ impl<'a> Scanner<'a> {
             source: source,
             iter: multipeek(source.char_indices()),
             current: 0,
+            line: 1,
         }
     }
 
     fn advance(&mut self) -> Option<(usize, char)> {
         self.iter.next().map(|(current, c)| {
             self.current = current;
+            if c == '\n' {
+                self.line += 1;
+            }
             (current, c)
         })
     }
@@ -152,8 +158,9 @@ impl<'a> Scanner<'a> {
         self.iter.peekn(n).map(|&(_, c)| c)
     }
 
-    fn token_end(&mut self) -> usize {
-        self.iter.peek().map(|&(i, _)| i).unwrap_or(self.source.len() - 1)
+    fn token_contents(&mut self, start: usize) -> &'a str {
+        let end = self.iter.peek().map(|&(i, _)| i).unwrap_or(self.source.len() - 1);
+        &self.source[start..end].trim_right()
     }
 
 	fn eatwhitespace(&mut self) {
@@ -236,13 +243,15 @@ impl<'a> Scanner<'a> {
 			_ => panic!("Unexpected character.")
 		};
 
-		let end = self.token_end();
+		let token_contents = self.token_contents(start);
+        let token_len = token_contents.len();
 
         let token = Token {
 			ty: ty,
 			start: start,
-			end : end,
-			value: &self.source[start..end].trim_right()
+			end : start + token_len,
+			value: token_contents,
+            line: self.line,
 		};
         Some(Ok(token))
     }
@@ -257,15 +266,14 @@ impl<'a> Scanner<'a> {
 		}
 	}
 
-    fn identifier(&mut self, start: usize) -> TokenType {
+    fn identifier(&mut self, start: usize) -> TokenType<'a> {
 		self.advance_while(|&c| {
 			('a' <= c && c <= 'z') ||
 			('A' <= c && c <= 'Z') ||
 			('0' <= c && c <= '9') ||
 			c == '_'
 		});
-		let end = self.token_end();
-        let word = &self.source[start..end];
+        let word = self.token_contents(start);
 		if let Some(keyword) = Keyword::from_str(word) {
 			TokenType::Keyword(keyword)
 		} else {
@@ -273,7 +281,7 @@ impl<'a> Scanner<'a> {
 		}
     }
 
-    fn number(&mut self, start: usize) -> TokenType {
+    fn number(&mut self, start: usize) -> TokenType<'a> {
 		self.advance_while(|&c| '0' <= c && c <= '9');
 
 		// Look for a fractional part
@@ -285,9 +293,8 @@ impl<'a> Scanner<'a> {
 			self.advance();
 			self.advance_while(|&c| '0' <= c && c <= '9');
 		}
-		let end = self.token_end();
-        let s = &self.source[start..end];
-		let num = s.parse::<f64>().unwrap();
+        let token_contents = self.token_contents(start);
+		let num = token_contents.parse::<f64>().unwrap();
 		TokenType::Number(num)
     }
 
@@ -295,16 +302,15 @@ impl<'a> Scanner<'a> {
 		self.peek().is_none()
 	}
 
-	fn string(&mut self, start: usize) -> TokenType {
+	fn string(&mut self, start: usize) -> TokenType<'a> {
 		self.advance_while(|&c| c != '"');
 		// consume the "
 		self.advance();
 		if self.is_at_end() {
 			panic!("Unterminated String");
 		}
-		let end = self.token_end();
-		let val = (&self.source[start+1..end-1]).to_string();
-		TokenType::String(val)
+        let token_contents = self.token_contents(start);
+		TokenType::String(token_contents.trim_matches('"'))
 	}
 }
 
