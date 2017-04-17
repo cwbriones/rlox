@@ -24,7 +24,7 @@ error_chain! {
 
         UnterminatedString {
             description("unterminated string")
-            display("unterminated string, expected '"')
+            display("unterminated string, expected '\"'")
         }
     }
 }

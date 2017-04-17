@@ -194,7 +194,10 @@ impl<'a> Scanner<'a> {
 				}
 			},
 			'"' => {
-				self.string(start)?
+                match self.string(start) {
+                    Ok(ty) => ty,
+                    Err(err) => return Some(Err(err)),
+                }
 			}
 			'0'...'9' => {
 				self.number(start)
@@ -272,7 +275,7 @@ impl<'a> Scanner<'a> {
             return Err(ErrorKind::UnterminatedString.into());
 		}
         let token_contents = self.token_contents(start);
-		TokenType::String(token_contents.trim_matches('"'))
+		Ok(TokenType::String(token_contents.trim_matches('"')))
 	}
 }
 

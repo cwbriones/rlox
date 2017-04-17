@@ -14,11 +14,14 @@ use scanner::Token;
 use scanner::TokenType;
 
 use parser::Parser;
+use eval::Eval;
+use eval::Context;
 
 mod errors;
 mod parser;
 mod scanner;
 mod multipeek;
+mod eval;
 
 fn main() {
     let mut args = env::args();
@@ -47,9 +50,12 @@ fn run_file(filename: &str) -> Result<(), Box<Error>> {
     }).collect::<Result<Vec<Token>, _>>()?;
 
     let mut parser = Parser::new(&tokens);
-    let expr = parser.expression();
+    let mut context = Context::new();
+    let expr = parser.expression()?;
+    let evald = expr.eval(&mut context)?;
 
     println!("{:?}", expr);
+    println!("{:?}", evald);
 
     Ok(())
 }

@@ -17,6 +17,10 @@
 ///            | "(" expression ")"
 /// ```
 
+use std::fmt::Debug;
+use std::fmt::Display;
+use std::fmt::Write;
+
 use errors::*;
 
 use scanner::Token;
@@ -28,7 +32,53 @@ pub struct Parser<'t> {
     current: usize,
 }
 
-#[derive(Debug)]
+struct PrettyPrinter {
+    buf: String,
+}
+
+impl PrettyPrinter {
+    fn new() -> Self {
+        PrettyPrinter {
+            buf: String::new(),
+        }
+    }
+
+	fn print<'t>(mut self, expr: &Expr<'t>) -> String {
+		self.print_inner(expr, 0);
+		self.buf
+	}
+
+    fn print_inner<'t>(&mut self, expr: &Expr<'t>, indent: usize) {
+        match *expr {
+            Expr::Binary(ref bin) => {
+				let op = bin.operator.value;
+				write!(&mut self.buf, "{:indent$}Binary({:?})\n", "", op, indent=indent);
+				self.print_inner(&*bin.lhs, indent + 2);
+				self.print_inner(&*bin.rhs, indent + 2);
+            },
+            Expr::Grouping(ref group) => {
+				self.print_inner(group, indent + 2);
+            },
+            Expr::Literal(ref lit) => {
+                write!(&mut self.buf, "{:indent$}{:?}\n", "", lit, indent=indent);
+            },
+            Expr::Unary(ref unary) => {
+				let op = unary.operator.value;
+				write!(&mut self.buf, "{:indent$}Unary({:?})\n", "", op, indent=indent);
+				self.print_inner(&*unary.unary, indent + 2);
+            },
+        }
+    }
+}
+
+impl<'t> Debug for Expr<'t> {
+	fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+		let pp = PrettyPrinter::new();
+		let s = pp.print(self);
+		write!(f, "{}", s)
+	}
+}
+
 pub enum Expr<'t> {
     Binary(Binary<'t>),
     Grouping(Box<Expr<'t>>),
@@ -36,11 +86,10 @@ pub enum Expr<'t> {
     Unary(Unary<'t>),
 }
 
-#[derive(Debug)]
 pub struct Binary<'t> {
-    lhs: Box<Expr<'t>>,
-    rhs: Box<Expr<'t>>,
-    operator: &'t Token<'t>,
+    pub lhs: Box<Expr<'t>>,
+    pub rhs: Box<Expr<'t>>,
+    pub operator: &'t Token<'t>,
 }
 
 impl<'t> Binary<'t> {
@@ -53,19 +102,30 @@ impl<'t> Binary<'t> {
     }
 }
 
-#[derive(Debug)]
 pub struct Unary<'t> {
-    operator: &'t Token<'t>,
-    unary: Box<Expr<'t>>,
+    pub operator: &'t Token<'t>,
+    pub unary: Box<Expr<'t>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Literal {
     Number(f64),
     String(String),
     True,
     False,
     Nil,
+}
+
+impl Display for Literal {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        match *self {
+            Literal::Number(n) => write!(f, "{}", n),
+            Literal::String(ref s) => write!(f, "{}", s),
+            Literal::True => write!(f, "true"),
+            Literal::False => write!(f, "false"),
+            Literal::Nil => write!(f, "nil"),
+        }
+    }
 }
 
 // Encapsulates rules with the following form:
