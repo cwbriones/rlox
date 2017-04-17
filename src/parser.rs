@@ -1,0 +1,195 @@
+/// Parsing lox expressions from a series of Tokens.
+///
+/// # The Lox Grammar
+///
+/// The currently supported grammar that we use, taken straight from
+/// Crafting Interpreters.
+///
+/// ```
+/// expression → equality
+/// equality   → comparison ( ( "!=" | "==" ) comparison )*
+/// comparison → term ( ( ">" | ">=" | "<" | "<=" ) term )*
+/// term       → factor ( ( "-" | "+" ) factor )*
+/// factor     → unary ( ( "/" | "*" ) unary )*
+/// unary      → ( "!" | "-" ) unary
+///            | primary
+/// primary    → NUMBER | STRING | "false" | "true" | "nil"
+///            | "(" expression ")"
+/// ```
+
+use errors::*;
+
+use scanner::Token;
+use scanner::TokenType;
+use scanner::Keyword;
+
+pub struct Parser<'t> {
+    tokens: &'t [Token<'t>],
+    current: usize,
+}
+
+#[derive(Debug)]
+pub enum Expr<'t> {
+    Binary(Binary<'t>),
+    Grouping(Box<Expr<'t>>),
+    Literal(Literal),
+    Unary(Unary<'t>),
+}
+
+#[derive(Debug)]
+pub struct Binary<'t> {
+    lhs: Box<Expr<'t>>,
+    rhs: Box<Expr<'t>>,
+    operator: &'t Token<'t>,
+}
+
+impl<'t> Binary<'t> {
+    fn new(lhs: Expr<'t>, rhs: Expr<'t>, operator: &'t Token<'t>) -> Self {
+        Binary {
+            lhs: Box::new(lhs),
+            rhs: Box::new(rhs),
+            operator: operator,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct Unary<'t> {
+    operator: &'t Token<'t>,
+    unary: Box<Expr<'t>>,
+}
+
+#[derive(Debug)]
+pub enum Literal {
+    Number(f64),
+    String(String),
+    True,
+    False,
+    Nil,
+}
+
+// Encapsulates rules with the following form:
+// name   → inner ( ( opA | obB | ... ) inner )*
+macro_rules! binary_expr_impl (
+    ($name:ident, $inner:ident, $($pattern:pat)|*) => (
+        fn $name(&mut self) -> Result<Expr<'t>> {
+            let mut expr = self.$inner()?;
+            while let Some(&Token{ref ty, ..}) = self.peek() {
+                match *ty {
+                    $($pattern)|* => { self.advance(); },
+                    _ => break,
+                }
+                let operator = self.previous().unwrap();
+                let rhs = self.$inner()?;
+                let binary = Binary::new(expr, rhs, operator);
+
+                expr = Expr::Binary(binary);
+            }
+            Ok(expr)
+        }
+    );
+);
+
+impl<'t> Parser<'t> {
+    pub fn new(tokens: &'t [Token<'t>]) -> Self {
+        Parser {
+            tokens: tokens,
+            current: 0,
+        }
+    }
+
+    // expression → equality
+    pub fn expression(&mut self) -> Result<Expr<'t>> {
+        self.equality()
+    }
+
+    // equality   → comparison ( ( "!=" | "==" ) comparison )*
+    binary_expr_impl!(equality, comparison, TokenType::BangEq | TokenType::EqualEq);
+    // comparison → term ( ( ">" | ">=" | "<" | "<=" ) term )*
+    binary_expr_impl!(comparison, term,
+        TokenType::GreaterThan
+        | TokenType::GreaterThanEq
+        | TokenType::LessThan
+        | TokenType::LessThanEq);
+    // term       → factor ( ( "-" | "+" ) factor )*
+    binary_expr_impl!(term, factor, TokenType::Plus | TokenType::Minus);
+    // factor     → unary ( ( "/" | "*" ) unary )*
+    binary_expr_impl!(factor, unary, TokenType::Slash | TokenType::Star);
+
+    // unary      → ( "!" | "-" ) unary
+    //            | primary
+    fn unary(&mut self) -> Result<Expr<'t>> {
+        match self.peek_type()? {
+            &TokenType::Bang | &TokenType::Minus => {
+                let op = self.advance();
+                let unary = self.unary()?;
+
+                Ok(Expr::Unary(Unary {
+                    operator: &op,
+                    unary: Box::new(unary),
+                }))
+            }
+            _ => self.primary()
+        }
+    }
+
+    // primary    → NUMBER | STRING | "false" | "true" | "nil"
+    //            | "(" expression ")"
+    fn primary(&mut self) -> Result<Expr<'t>> {
+        let peek_type = self.peek_type()?;
+        match peek_type {
+            &TokenType::Keyword(Keyword::Nil) => {
+                self.advance();
+                Ok(Expr::Literal(Literal::Nil))
+            },
+            &TokenType::Keyword(Keyword::True) => {
+                self.advance();
+                Ok(Expr::Literal(Literal::True))
+            },
+            &TokenType::Keyword(Keyword::False) => {
+                self.advance();
+                Ok(Expr::Literal(Literal::False))
+            },
+            &TokenType::String(s) => {
+                self.advance();
+                Ok(Expr::Literal(Literal::String(s.into())))
+            },
+            &TokenType::Number(n) => {
+                self.advance();
+                Ok(Expr::Literal(Literal::Number(n)))
+            },
+            &TokenType::LeftParen => {
+                self.advance();
+                let expr = self.expression()?;
+                match self.peek_type()? {
+                    &TokenType::RightParen => Ok(Expr::Grouping(Box::new(expr))),
+                    _ => Err("Expect ')' after expression".into()),
+                }
+            },
+            _ => Err("Expected a literal or parenthesized expression".into())
+        }
+    }
+
+    fn advance(&mut self) -> &'t Token<'t> {
+        self.current += 1;
+        self.previous().unwrap()
+    }
+
+    fn peek(&self) -> Option<&'t Token<'t>> {
+        self.tokens.get(self.current)
+    }
+
+    fn peek_type(&self) -> Result<&'t TokenType<'t>> {
+        let token_type = self.tokens.get(self.current).map(|token| {
+            &token.ty
+        });
+        match token_type {
+            Some(ty) => Ok(ty),
+            None => Err(ErrorKind::UnexpectedEOF.into()),
+        }
+    }
+
+    fn previous(&self) -> Option<&'t Token<'t>> {
+        self.tokens.get(self.current - 1)
+    }
+}
