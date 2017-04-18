@@ -13,8 +13,8 @@ error_chain! {
     // syntax is not supported.
     errors {
         UnexpectedEOF {
-            description("unexpected end of file")
-            display("unexpected end of file")
+            description("unexpected end of input")
+            display("unexpected end of input")
         }
 
         UnexpectedChar(c: char) {

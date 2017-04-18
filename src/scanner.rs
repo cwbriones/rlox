@@ -121,7 +121,7 @@ impl<'a> Scanner<'a> {
     }
 
     fn token_contents(&mut self, start: usize) -> &'a str {
-        let end = self.iter.peek().map(|&(i, _)| i).unwrap_or(self.source.len() - 1);
+        let end = self.iter.peek().map(|&(i, _)| i).unwrap_or(self.source.len());
         &self.source[start..end].trim_right()
     }
 
@@ -253,13 +253,16 @@ impl<'a> Scanner<'a> {
         let first = self.peek();
         let second = self.peekn(1);
 
-        if let (Some('.'), Some('0'...'9')) = (first, second) {
+        let num = if let (Some('.'), Some('0'...'9')) = (first, second) {
             // Consume the '.'
             self.advance();
             self.advance_while(|&c| '0' <= c && c <= '9');
-        }
-        let token_contents = self.token_contents(start);
-        let num = token_contents.parse::<f64>().unwrap();
+            let token_contents = self.token_contents(start);
+            token_contents.parse::<f64>().unwrap()
+        } else {
+            let token_contents = self.token_contents(start);
+            token_contents.parse::<u64>().unwrap() as f64
+        };
         TokenType::Number(num)
     }
 

@@ -3,19 +3,19 @@
 
 #[macro_use]
 extern crate error_chain;
+extern crate rustyline;
 
 use std::env;
-use std::error::Error;
+use std::io::stdin;
 use std::io::prelude::*;
 use std::fs::File;
+use std::error::Error;
 
-use scanner::Scanner;
-use scanner::Token;
-use scanner::TokenType;
+use rustyline::error::ReadlineError;
 
-use parser::Parser;
 use eval::Eval;
 use eval::Context;
+use errors::Result;
 
 mod errors;
 mod parser;
@@ -26,36 +26,63 @@ mod eval;
 fn main() {
     let mut args = env::args();
     let _ = args.next();
-    if let Some(ref sourcefile) = args.next() {
-        if let Err(err) = run_file(sourcefile) {
-            println!("Error: {}", err);
+
+    if let Some(ref arg) = args.next() {
+        match &arg[..] {
+            "help" => {
+                println!("Usage: rlox [script]");
+                ::std::process::exit(0);
+            },
+            sourcefile => {
+                if let Err(err) = run_file(sourcefile) {
+                    println!("Error: {}", err);
+                    ::std::process::exit(1);
+                }
+                ::std::process::exit(0);
+            }
         }
-    } else {
-        println!("Usage: rlox [script]");
     }
+    repl();
 }
 
-fn run_file(filename: &str) -> Result<(), Box<Error>> {
+fn repl() {
+    let mut rl = rustyline::Editor::<()>::new();
+    let mut context = Context::new();
+
+    println!("Welcome to lox! Use Ctrl-C to exit.");
+    loop {
+        let readline = rl.readline("rlox> ");
+        match readline {
+            Ok(line) => {
+                rl.add_history_entry(&line);
+                match line.eval(&mut context) {
+                    Ok(lit) => println!("{}", lit),
+                    Err(err) => println!("[error]: {}", err.description()),
+                }
+            },
+            Err(ReadlineError::Interrupted) => {
+                break
+            },
+            Err(ReadlineError::Eof) => {
+                break
+            },
+            Err(err) => {
+                println!("[error]: {:?}", err);
+                break
+            }
+        }
+    }
+    println!("Goodbye!");
+}
+
+fn run_file(filename: &str) -> Result<()> {
     let mut file = File::open(filename)?;
     let mut contents = String::new();
     file.read_to_string(&mut contents)?;
 
-    let scanner = Scanner::new(&contents);
-    let tokens = scanner.filter(|t| {
-        if let &Ok(Token{ty: TokenType::Comment, ..}) = t {
-            false
-        } else {
-            true
-        }
-    }).collect::<Result<Vec<Token>, _>>()?;
-
-    let mut parser = Parser::new(&tokens);
     let mut context = Context::new();
-    let expr = parser.expression()?;
-    let evald = expr.eval(&mut context)?;
 
-    println!("{:?}", expr);
-    println!("{}", evald);
-
+    let lit = contents.eval(&mut context)?;
+    println!("{}", lit);
     Ok(())
 }

@@ -232,7 +232,10 @@ impl<'t> Parser<'t> {
                 self.advance();
                 let expr = self.expression()?;
                 match self.peek_type()? {
-                    &TokenType::RightParen => Ok(Expr::Grouping(Box::new(expr))),
+                    &TokenType::RightParen => {
+                        self.advance();
+                        Ok(Expr::Grouping(Box::new(expr)))
+                    }
                     _ => Err("Expect ')' after expression".into()),
                 }
             },
