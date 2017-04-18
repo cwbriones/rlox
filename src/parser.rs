@@ -43,40 +43,40 @@ impl PrettyPrinter {
         }
     }
 
-	fn print<'t>(mut self, expr: &Expr<'t>) -> String {
-		self.print_inner(expr, 0);
-		self.buf
-	}
+    fn print<'t>(mut self, expr: &Expr<'t>) -> String {
+        self.print_inner(expr, 0);
+        self.buf
+    }
 
     fn print_inner<'t>(&mut self, expr: &Expr<'t>, indent: usize) {
         match *expr {
             Expr::Binary(ref bin) => {
-				let op = bin.operator.value;
-				write!(&mut self.buf, "{:indent$}Binary({:?})\n", "", op, indent=indent);
-				self.print_inner(&*bin.lhs, indent + 2);
-				self.print_inner(&*bin.rhs, indent + 2);
+                let op = bin.operator.value;
+                write!(&mut self.buf, "{:indent$}Binary({:?})\n", "", op, indent=indent);
+                self.print_inner(&*bin.lhs, indent + 2);
+                self.print_inner(&*bin.rhs, indent + 2);
             },
             Expr::Grouping(ref group) => {
-				self.print_inner(group, indent + 2);
+                self.print_inner(group, indent + 2);
             },
             Expr::Literal(ref lit) => {
                 write!(&mut self.buf, "{:indent$}{:?}\n", "", lit, indent=indent);
             },
             Expr::Unary(ref unary) => {
-				let op = unary.operator.value;
-				write!(&mut self.buf, "{:indent$}Unary({:?})\n", "", op, indent=indent);
-				self.print_inner(&*unary.unary, indent + 2);
+                let op = unary.operator.value;
+                write!(&mut self.buf, "{:indent$}Unary({:?})\n", "", op, indent=indent);
+                self.print_inner(&*unary.unary, indent + 2);
             },
         }
     }
 }
 
 impl<'t> Debug for Expr<'t> {
-	fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-		let pp = PrettyPrinter::new();
-		let s = pp.print(self);
-		write!(f, "{}", s)
-	}
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        let pp = PrettyPrinter::new();
+        let s = pp.print(self);
+        write!(f, "{}", s)
+    }
 }
 
 pub enum Expr<'t> {
