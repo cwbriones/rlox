@@ -86,6 +86,16 @@ pub enum Expr<'t> {
     Unary(Unary<'t>),
 }
 
+impl Literal {
+    pub fn into_bool(self) -> bool {
+        match self {
+            Literal::Nil => false,
+            Literal::False => false,
+            _ => true,
+        }
+    }
+}
+
 pub struct Binary<'t> {
     pub lhs: Box<Expr<'t>>,
     pub rhs: Box<Expr<'t>>,

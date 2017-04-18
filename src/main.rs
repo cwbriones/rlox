@@ -55,7 +55,7 @@ fn run_file(filename: &str) -> Result<(), Box<Error>> {
     let evald = expr.eval(&mut context)?;
 
     println!("{:?}", expr);
-    println!("{:?}", evald);
+    println!("{}", evald);
 
     Ok(())
 }
