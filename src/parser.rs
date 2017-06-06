@@ -86,16 +86,6 @@ pub enum Expr<'t> {
     Unary(Unary<'t>),
 }
 
-impl Literal {
-    pub fn into_bool(self) -> bool {
-        match self {
-            Literal::Nil => false,
-            Literal::False => false,
-            _ => true,
-        }
-    }
-}
-
 pub struct Binary<'t> {
     pub lhs: Box<Expr<'t>>,
     pub rhs: Box<Expr<'t>>,
@@ -117,7 +107,7 @@ pub struct Unary<'t> {
     pub unary: Box<Expr<'t>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum Literal {
     Number(f64),
     String(String),
@@ -126,11 +116,34 @@ pub enum Literal {
     Nil,
 }
 
+impl Eq for Literal {
+}
+
+impl Literal {
+    pub fn into_bool(self) -> bool {
+        match self {
+            Literal::Nil => false,
+            Literal::False => false,
+            _ => true,
+        }
+    }
+}
+
+impl Into<Literal> for bool {
+    fn into(self) -> Literal {
+        if self {
+            Literal::True
+        } else {
+            Literal::False
+        }
+    }
+}
+
 impl Display for Literal {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
         match *self {
             Literal::Number(n) => write!(f, "{}", n),
-            Literal::String(ref s) => write!(f, "{}", s),
+            Literal::String(ref s) => write!(f, "{:?}", s),
             Literal::True => write!(f, "true"),
             Literal::False => write!(f, "false"),
             Literal::Nil => write!(f, "nil"),

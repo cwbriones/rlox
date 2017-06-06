@@ -65,7 +65,7 @@ macro_rules! numeric_binary_op (
                 return Err("Invalid operand on rhs, expected number".into())
             },
             _ => {
-                return Err("Invalid operands, expected numbers".into())
+                return Err("Invalid operands, expected number or string".into())
             },
         }
     );
@@ -78,7 +78,14 @@ impl<'t> Eval for Binary<'t> {
         let op = &self.operator.ty;
 
         match *op {
-            TokenType::Plus => numeric_binary_op!(+, lhs, rhs),
+            TokenType::Plus => match (lhs, rhs) {
+                (Literal::String(lhs), Literal::String(rhs)) => {
+                    let mut res = lhs.clone();
+                    res.push_str(&rhs);
+                    return Ok(Literal::String(res));
+                },
+                (lhs, rhs) => numeric_binary_op!(+, lhs, rhs)
+            },
             TokenType::Minus => numeric_binary_op!(-, lhs, rhs),
             TokenType::Star => numeric_binary_op!(*, lhs, rhs),
             TokenType::Slash => numeric_binary_op!(/, lhs, rhs),
