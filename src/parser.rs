@@ -79,6 +79,11 @@ impl<'t> Debug for Expr<'t> {
     }
 }
 
+pub enum Stmt<'t> {
+    Expression(Expr<'t>),
+    Print(Expr<'t>),
+}
+
 pub enum Expr<'t> {
     Binary(Binary<'t>),
     Grouping(Box<Expr<'t>>),
@@ -114,6 +119,7 @@ pub enum Literal {
     True,
     False,
     Nil,
+    Void,
 }
 
 impl Eq for Literal {
@@ -147,6 +153,7 @@ impl Display for Literal {
             Literal::True => write!(f, "true"),
             Literal::False => write!(f, "false"),
             Literal::Nil => write!(f, "nil"),
+            Literal::Void => Ok(()),
         }
     }
 }
@@ -178,6 +185,48 @@ impl<'t> Parser<'t> {
         Parser {
             tokens: tokens,
             current: 0,
+        }
+    }
+
+    pub fn parse(&mut self) -> Result<Vec<Stmt<'t>>> {
+        let mut statements = Vec::new();
+        while let Ok(stmt) = self.statement() {
+            // TODO: This should return an error if the statement parsing
+            // fails with something other than end of input
+            statements.push(stmt);
+        }
+        Ok(statements)
+    }
+
+    fn statement(&mut self) -> Result<Stmt<'t>> {
+        match *self.peek_type()? {
+            TokenType::Keyword(Keyword::Print) => {
+                self.advance();
+                self.print_statement()
+            },
+            _ => self.expression_statement()
+        }
+    }
+
+    fn print_statement(&mut self) -> Result<Stmt<'t>> {
+        let value = self.expression()?;
+        match *self.peek_type()? {
+            TokenType::Semicolon => {
+                self.advance();
+            },
+            _ => { return Err("Expected ';' after value.".into()); }
+        }
+        Ok(Stmt::Print(value))
+    }
+
+    fn expression_statement(&mut self) -> Result<Stmt<'t>> {
+        let expr = self.expression()?;
+        match *self.peek_type()? {
+            TokenType::Semicolon => {
+                self.advance();
+                Ok(Stmt::Expression(expr))
+            },
+            _ => { Err("Expected ';' after value.".into()) }
         }
     }
 

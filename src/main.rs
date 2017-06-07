@@ -15,6 +15,7 @@ use rustyline::error::ReadlineError;
 
 use eval::Eval;
 use eval::Context;
+use parser::Literal;
 use errors::Result;
 
 mod errors;
@@ -56,6 +57,7 @@ fn repl() {
             Ok(line) => {
                 rl.add_history_entry(&line);
                 match line.eval(&mut context) {
+                    Ok(Literal::Void) => {},
                     Ok(lit) => println!("{}", lit),
                     Err(err) => println!("[error]: {}", err.description()),
                 }
@@ -82,7 +84,6 @@ fn run_file(filename: &str) -> Result<()> {
 
     let mut context = Context::new();
 
-    let lit = contents.eval(&mut context)?;
-    println!("{}", lit);
+    contents.eval(&mut context)?;
     Ok(())
 }

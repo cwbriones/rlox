@@ -1,4 +1,5 @@
 use parser::Parser;
+use parser::Stmt;
 use parser::Expr;
 use parser::Binary;
 use parser::Unary;
@@ -36,8 +37,24 @@ impl<T> Eval for T
         }).collect::<Result<Vec<Token>>>()?;
 
         let mut parser = Parser::new(&tokens);
-        let expr = parser.expression()?;
-        expr.eval(context)
+        let statements = parser.parse()?;
+        for stmt in statements {
+            stmt.eval(context)?;
+        }
+        Ok(Literal::Void)
+    }
+}
+
+impl<'t> Eval for Stmt<'t> {
+    fn eval(&self, context: &mut Context) -> Result<Literal> {
+        match *self {
+            Stmt::Expression(ref inner) => { inner.eval(context)?; }
+            Stmt::Print(ref inner) => {
+                let evald = inner.eval(context)?;
+                println!("{}", evald);
+            }
+        }
+        Ok(Literal::Void)
     }
 }
 
