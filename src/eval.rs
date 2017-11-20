@@ -3,7 +3,8 @@ use parser::Stmt;
 use parser::Expr;
 use parser::Binary;
 use parser::Unary;
-use parser::Literal;
+
+use value::Value;
 
 use scanner::Token;
 use scanner::TokenType;
@@ -18,14 +19,14 @@ impl Context {
 }
 
 pub trait Eval {
-    fn eval(&self, context: &mut Context) -> Result<Literal>;
+    fn eval(&self, context: &mut Context) -> Result<Value>;
 }
 
 impl<T> Eval for T
     where
         T: AsRef<str>
 {
-    fn eval(&self, context: &mut Context) -> Result<Literal> {
+    fn eval(&self, context: &mut Context) -> Result<Value> {
         let s = self.as_ref();
         let scanner = Scanner::new(s);
         let tokens = scanner.filter(|t| {
@@ -41,12 +42,12 @@ impl<T> Eval for T
         for stmt in statements {
             stmt.eval(context)?;
         }
-        Ok(Literal::Void)
+        Ok(Value::Void)
     }
 }
 
 impl<'t> Eval for Stmt<'t> {
-    fn eval(&self, context: &mut Context) -> Result<Literal> {
+    fn eval(&self, context: &mut Context) -> Result<Value> {
         match *self {
             Stmt::Expression(ref inner) => { inner.eval(context)?; }
             Stmt::Print(ref inner) => {
@@ -54,12 +55,12 @@ impl<'t> Eval for Stmt<'t> {
                 println!("{}", evald);
             }
         }
-        Ok(Literal::Void)
+        Ok(Value::Void)
     }
 }
 
 impl<'t> Eval for Expr<'t> {
-    fn eval(&self, context: &mut Context) -> Result<Literal> {
+    fn eval(&self, context: &mut Context) -> Result<Value> {
         match *self {
             Expr::Grouping(ref inner) => inner.eval(context),
             Expr::Binary(ref inner) => inner.eval(context),
@@ -72,13 +73,13 @@ impl<'t> Eval for Expr<'t> {
 macro_rules! numeric_binary_op (
     ($op:tt, $lhs:ident, $rhs:ident) => (
         match ($lhs, $rhs) {
-            (Literal::Number(nlhs), Literal::Number(nrhs)) => {
-                return Ok(Literal::Number(nlhs $op nrhs));
+            (Value::Number(nlhs), Value::Number(nrhs)) => {
+                return Ok(Value::Number(nlhs $op nrhs));
             },
-            (Literal::Number(_), _) => {
+            (Value::Number(_), _) => {
                 return Err("Invalid operand on lhs, expected number".into())
             },
-            (_, Literal::Number(_)) => {
+            (_, Value::Number(_)) => {
                 return Err("Invalid operand on rhs, expected number".into())
             },
             _ => {
@@ -89,17 +90,17 @@ macro_rules! numeric_binary_op (
 );
 
 impl<'t> Eval for Binary<'t> {
-    fn eval(&self, context: &mut Context) -> Result<Literal> {
+    fn eval(&self, context: &mut Context) -> Result<Value> {
         let lhs = self.lhs.eval(context)?;
         let rhs = self.rhs.eval(context)?;
         let op = &self.operator.ty;
 
         match *op {
             TokenType::Plus => match (lhs, rhs) {
-                (Literal::String(lhs), Literal::String(rhs)) => {
+                (Value::String(lhs), Value::String(rhs)) => {
                     let mut res = lhs.clone();
                     res.push_str(&rhs);
-                    return Ok(Literal::String(res));
+                    return Ok(Value::String(res));
                 },
                 (lhs, rhs) => numeric_binary_op!(+, lhs, rhs)
             },
@@ -112,13 +113,13 @@ impl<'t> Eval for Binary<'t> {
 }
 
 impl<'t> Eval for Unary<'t> {
-    fn eval(&self, context: &mut Context) -> Result<Literal> {
+    fn eval(&self, context: &mut Context) -> Result<Value> {
         let operand = self.unary.eval(context)?;
         match self.operator.ty {
             TokenType::Minus => {
                 match operand {
-                    Literal::Number(n) => {
-                        Ok(Literal::Number(-1.0 * n))
+                    Value::Number(n) => {
+                        Ok(Value::Number(-1.0 * n))
                     },
                     _ => {
                         Err("Invalid operand for operator '-', expected number".into())
@@ -126,10 +127,10 @@ impl<'t> Eval for Unary<'t> {
                 }
             },
             TokenType::Bang => {
-                if operand.into_bool() {
-                    Ok(Literal::False)
+                if operand.into() {
+                    Ok(Value::False)
                 } else {
-                    Ok(Literal::True)
+                    Ok(Value::True)
                 }
             },
             _ => unreachable!(),
@@ -137,8 +138,8 @@ impl<'t> Eval for Unary<'t> {
     }
 }
 
-impl Eval for Literal {
-    fn eval(&self, _: &mut Context) -> Result<Literal> {
+impl Eval for Value {
+    fn eval(&self, _: &mut Context) -> Result<Value> {
         Ok(self.clone())
     }
 }

@@ -23,6 +23,8 @@ use std::fmt::Write;
 
 use errors::*;
 
+use value::Value;
+
 use scanner::Token;
 use scanner::TokenType;
 use scanner::Keyword;
@@ -87,7 +89,7 @@ pub enum Stmt<'t> {
 pub enum Expr<'t> {
     Binary(Binary<'t>),
     Grouping(Box<Expr<'t>>),
-    Literal(Literal),
+    Literal(Value),
     Unary(Unary<'t>),
 }
 
@@ -110,52 +112,6 @@ impl<'t> Binary<'t> {
 pub struct Unary<'t> {
     pub operator: &'t Token<'t>,
     pub unary: Box<Expr<'t>>,
-}
-
-#[derive(PartialEq, Debug, Clone)]
-pub enum Literal {
-    Number(f64),
-    String(String),
-    True,
-    False,
-    Nil,
-    Void,
-}
-
-impl Eq for Literal {
-}
-
-impl Literal {
-    pub fn into_bool(self) -> bool {
-        match self {
-            Literal::Nil => false,
-            Literal::False => false,
-            _ => true,
-        }
-    }
-}
-
-impl Into<Literal> for bool {
-    fn into(self) -> Literal {
-        if self {
-            Literal::True
-        } else {
-            Literal::False
-        }
-    }
-}
-
-impl Display for Literal {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-        match *self {
-            Literal::Number(n) => write!(f, "{}", n),
-            Literal::String(ref s) => write!(f, "{:?}", s),
-            Literal::True => write!(f, "true"),
-            Literal::False => write!(f, "false"),
-            Literal::Nil => write!(f, "nil"),
-            Literal::Void => Ok(()),
-        }
-    }
 }
 
 // Encapsulates rules with the following form:
@@ -272,23 +228,23 @@ impl<'t> Parser<'t> {
         match peek_type {
             &TokenType::Keyword(Keyword::Nil) => {
                 self.advance();
-                Ok(Expr::Literal(Literal::Nil))
+                Ok(Expr::Literal(Value::Nil))
             },
             &TokenType::Keyword(Keyword::True) => {
                 self.advance();
-                Ok(Expr::Literal(Literal::True))
+                Ok(Expr::Literal(Value::True))
             },
             &TokenType::Keyword(Keyword::False) => {
                 self.advance();
-                Ok(Expr::Literal(Literal::False))
+                Ok(Expr::Literal(Value::False))
             },
             &TokenType::String(s) => {
                 self.advance();
-                Ok(Expr::Literal(Literal::String(s.into())))
+                Ok(Expr::Literal(Value::String(s.into())))
             },
             &TokenType::Number(n) => {
                 self.advance();
-                Ok(Expr::Literal(Literal::Number(n)))
+                Ok(Expr::Literal(Value::Number(n)))
             },
             &TokenType::LeftParen => {
                 self.advance();
