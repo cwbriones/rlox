@@ -6,3 +6,5 @@ authors = ["Christian Briones <cwbriones@gmail.com>"]
 [dependencies]
 error-chain = "*"
 rustyline = "*"
+env_logger = "*"
+log = "*"

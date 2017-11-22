@@ -22,6 +22,7 @@ use std::fmt::Display;
 use std::fmt::Write;
 
 use errors::*;
+use errors::Result;
 
 use value::Value;
 
@@ -69,6 +70,9 @@ impl PrettyPrinter {
                 write!(&mut self.buf, "{:indent$}Unary({:?})\n", "", op, indent=indent);
                 self.print_inner(&*unary.unary, indent + 2);
             },
+            Expr::Var(ref var) => {
+                write!(&mut self.buf, "{:indent$}Var({:?})\n", "", var, indent=indent);
+            }
         }
     }
 }
@@ -84,6 +88,7 @@ impl<'t> Debug for Expr<'t> {
 pub enum Stmt<'t> {
     Expression(Expr<'t>),
     Print(Expr<'t>),
+    Var(&'t Token<'t>, Expr<'t>)
 }
 
 pub enum Expr<'t> {
@@ -91,6 +96,7 @@ pub enum Expr<'t> {
     Grouping(Box<Expr<'t>>),
     Literal(Value),
     Unary(Unary<'t>),
+    Var(&'t Token<'t>),
 }
 
 pub struct Binary<'t> {
@@ -144,16 +150,42 @@ impl<'t> Parser<'t> {
         }
     }
 
+    // program → declaration* eof ;
     pub fn parse(&mut self) -> Result<Vec<Stmt<'t>>> {
         let mut statements = Vec::new();
-        while let Ok(stmt) = self.statement() {
-            // TODO: This should return an error if the statement parsing
-            // fails with something other than end of input
-            statements.push(stmt);
+        while let Some(_) = self.peek() {
+            match self.declaration() {
+                Ok(stmt) => statements.push(stmt),
+                Err(_)   => self.synchronize(),
+            }
         }
         Ok(statements)
     }
 
+    // declaration → varDecl
+    //             | statement ;
+    fn declaration(&mut self) -> Result<Stmt<'t>> {
+        if let TokenType::Keyword(Keyword::Var) = *self.peek_type()? {
+            self.advance();
+            return self.var_decl();
+        }
+        self.statement()
+    }
+
+    // varDecl → "var" IDENTIFIER ( "=" expression )? ";" ;
+    fn var_decl(&mut self) -> Result<Stmt<'t>> {
+        self.expect(TokenType::Identifier, "Expected identifier after keyword 'var'")?;
+        let ident = self.advance();
+        let mut initializer = Expr::Literal(Value::Nil);
+        if let TokenType::Equal = *self.peek_type()? {
+            initializer = self.expression()?;
+        }
+        self.expect(TokenType::Semicolon, "Expected semicolon after variable declaration")?;
+        Ok(Stmt::Var(ident, initializer))
+    }
+
+    // statement  → exprStmt
+    //            | printStmt ;
     fn statement(&mut self) -> Result<Stmt<'t>> {
         match *self.peek_type()? {
             TokenType::Keyword(Keyword::Print) => {
@@ -166,24 +198,23 @@ impl<'t> Parser<'t> {
 
     fn print_statement(&mut self) -> Result<Stmt<'t>> {
         let value = self.expression()?;
-        match *self.peek_type()? {
-            TokenType::Semicolon => {
-                self.advance();
-            },
-            _ => { return Err("Expected ';' after value.".into()); }
-        }
+        self.expect(TokenType::Semicolon, "Expected ';' after value")?;
         Ok(Stmt::Print(value))
+    }
+
+    fn expect(&mut self, token_type: TokenType, msg: &str) -> Result<()> {
+        if *self.peek_type()? == token_type {
+            self.advance();
+            Ok(())
+        } else {
+            Err(msg.into())
+        }
     }
 
     fn expression_statement(&mut self) -> Result<Stmt<'t>> {
         let expr = self.expression()?;
-        match *self.peek_type()? {
-            TokenType::Semicolon => {
-                self.advance();
-                Ok(Stmt::Expression(expr))
-            },
-            _ => { Err("Expected ';' after value.".into()) }
-        }
+        self.expect(TokenType::Semicolon, "Expected ';' after value")?;
+        Ok(Stmt::Expression(expr))
     }
 
     // expression → equality
@@ -223,6 +254,7 @@ impl<'t> Parser<'t> {
 
     // primary    → NUMBER | STRING | "false" | "true" | "nil"
     //            | "(" expression ")"
+    //            | IDENTIFIER
     fn primary(&mut self) -> Result<Expr<'t>> {
         let peek_type = self.peek_type()?;
         match peek_type {
@@ -257,7 +289,35 @@ impl<'t> Parser<'t> {
                     _ => Err("Expect ')' after expression".into()),
                 }
             },
+            &TokenType::Identifier => {
+                let token = self.advance();
+                Ok(Expr::Var(token))
+            },
             _ => Err("Expected a literal or parenthesized expression".into())
+        }
+    }
+
+    /// Discards tokens until a statement or expression boundary.
+    fn synchronize(&mut self) {
+        while self.peek_type().is_ok() {
+            if let Some(&TokenType::Semicolon) = self.previous_type() {
+                return;
+            }
+            let peek_type = self.peek_type().unwrap();
+            match *peek_type {
+                TokenType::Keyword(Keyword::Class)
+                | TokenType::Keyword(Keyword::Fun)
+                | TokenType::Keyword(Keyword::Var)
+                | TokenType::Keyword(Keyword::For)
+                | TokenType::Keyword(Keyword::If)
+                | TokenType::Keyword(Keyword::While)
+                | TokenType::Keyword(Keyword::Return)
+                | TokenType::Keyword(Keyword::Print) => return,
+                _ => { self.advance(); },
+            }
+        }
+        if let Some(token) = self.peek() {
+            debug!("Synchonized at: {:?}", token);
         }
     }
 
@@ -282,5 +342,9 @@ impl<'t> Parser<'t> {
 
     fn previous(&self) -> Option<&'t Token<'t>> {
         self.tokens.get(self.current - 1)
+    }
+
+    fn previous_type(&self) -> Option<&'t TokenType<'t>> {
+        self.tokens.get(self.current - 1).map(|t| &t.ty)
     }
 }

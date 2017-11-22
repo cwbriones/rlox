@@ -4,7 +4,7 @@ use errors::*;
 use multipeek::MultiPeek;
 use multipeek::multipeek;
 
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub struct Token<'a> {
     pub ty: TokenType<'a>,
     pub value: &'a str,
@@ -64,22 +64,22 @@ pub enum Keyword {
 impl Keyword {
     pub fn from_str(word: &str) -> Option<Keyword> {
         match word {
-            "class" => Some(Keyword::Class),
-            "var" => Some(Keyword::Var),
-            "and" => Some(Keyword::And),
-            "else" => Some(Keyword::Else),
-            "false" => Some(Keyword::False),
-            "for" => Some(Keyword::For),
-            "fun" => Some(Keyword::Fun),
-            "if" => Some(Keyword::If),
-            "nil" => Some(Keyword::Nil),
-            "or" => Some(Keyword::Or),
-            "print" => Some(Keyword::Print),
+            "class"  => Some(Keyword::Class),
+            "var"    => Some(Keyword::Var),
+            "and"    => Some(Keyword::And),
+            "else"   => Some(Keyword::Else),
+            "false"  => Some(Keyword::False),
+            "for"    => Some(Keyword::For),
+            "fun"    => Some(Keyword::Fun),
+            "if"     => Some(Keyword::If),
+            "nil"    => Some(Keyword::Nil),
+            "or"     => Some(Keyword::Or),
+            "print"  => Some(Keyword::Print),
             "return" => Some(Keyword::Return),
-            "super" => Some(Keyword::Super),
-            "this" => Some(Keyword::This),
-            "true" => Some(Keyword::True),
-            "while" => Some(Keyword::While),
+            "super"  => Some(Keyword::Super),
+            "this"   => Some(Keyword::This),
+            "true"   => Some(Keyword::True),
+            "while"  => Some(Keyword::While),
             _ => None,
         }
     }

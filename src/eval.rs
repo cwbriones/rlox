@@ -5,6 +5,7 @@ use parser::Binary;
 use parser::Unary;
 
 use value::Value;
+use environment::Environment;
 
 use scanner::Token;
 use scanner::TokenType;
@@ -12,10 +13,16 @@ use scanner::Scanner;
 
 use errors::*;
 
-pub struct Context;
+pub struct Context {
+    pub environment: Environment
+}
 
 impl Context {
-    pub fn new() -> Self { Context }
+    pub fn new() -> Self {
+        Context {
+            environment: Environment::new()
+        }
+    }
 }
 
 pub trait Eval {
@@ -53,6 +60,11 @@ impl<'t> Eval for Stmt<'t> {
             Stmt::Print(ref inner) => {
                 let evald = inner.eval(context)?;
                 println!("{}", evald);
+            },
+            Stmt::Var(ref tok, ref expr) => {
+                let val = expr.eval(context)?;
+                debug!("Set var '{}' to value {}", tok.value, val);
+                context.environment.bind(tok.value, val);
             }
         }
         Ok(Value::Void)
@@ -66,6 +78,16 @@ impl<'t> Eval for Expr<'t> {
             Expr::Binary(ref inner) => inner.eval(context),
             Expr::Unary(ref inner) => inner.eval(context),
             Expr::Literal(ref inner) => inner.eval(context),
+            Expr::Var(ref token) => {
+                let var = token.value;
+                let env = &context.environment;
+                match env.lookup(var) {
+                    None => return Err("Could not find var".into()),
+                    Some(v) => {
+                        return Ok((*v).clone())
+                    }
+                }
+            }
         }
     }
 }

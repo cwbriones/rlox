@@ -26,5 +26,10 @@ error_chain! {
             description("unterminated string")
             display("unterminated string, expected '\"'")
         }
+
+        UndefinedVariable(s: String) {
+            description("undefined variable")
+            display("Symbol '{}' could not be resolved", s)
+        }
     }
 }

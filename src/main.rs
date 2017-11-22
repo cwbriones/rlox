@@ -4,6 +4,9 @@
 #[macro_use]
 extern crate error_chain;
 extern crate rustyline;
+extern crate env_logger;
+#[macro_use]
+extern crate log;
 
 use std::env;
 use std::io::stdin;
@@ -19,6 +22,7 @@ use value::Value;
 use errors::Result;
 
 mod errors;
+mod environment;
 mod parser;
 mod scanner;
 mod multipeek;
@@ -26,6 +30,8 @@ mod eval;
 mod value;
 
 fn main() {
+    env_logger::init().expect("Failed to initialize logger");
+
     let mut args = env::args();
     let _ = args.next();
 
@@ -70,8 +76,7 @@ fn repl() {
                 break
             },
             Err(err) => {
-                println!("[error]: {:?}", err);
-                break
+                error!("{:?}", err);
             }
         }
     }
