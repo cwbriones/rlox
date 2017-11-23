@@ -263,3 +263,51 @@ impl<'t> Parser<'t> {
         self.peek().map(|t| t.ty)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::Parser;
+
+    #[test]
+    fn parse_declaration() {
+        let prog = r#"
+        var a;
+        var b = 2;
+        "#;
+
+        let mut parser = Parser::new(prog);
+        let statements = parser.parse().unwrap();
+    }
+
+    fn parse_print_expression() {
+        let prog = r#"
+        print 1;
+        print "foo";
+        "#;
+
+        let mut parser = Parser::new(prog);
+        let statements = parser.parse().unwrap();
+    }
+
+    #[test]
+    fn parse_arithmetic_expressions() {
+        let prog = r#"
+        1 * (2 + 3) / 4 + 5 - 6;
+        1.0 + 2 - 3.1415;
+        "#;
+
+        let mut parser = Parser::new(prog);
+        let statements = parser.parse().unwrap();
+    }
+
+    #[test]
+    fn parse_with_comments() {
+        let prog = r#"
+        // Some insightful remark
+        1 + 1;
+        "#;
+
+        let mut parser = Parser::new(prog);
+        let statements = parser.parse().unwrap();
+    }
+}
