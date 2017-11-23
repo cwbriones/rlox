@@ -1,20 +1,38 @@
-use parser::TokenType;
-use parser::ast::{Expr,Stmt,Binary,Unary};
-
-use value::Value;
 use environment::Environment;
-
 use errors::*;
+use parser::ast::{Expr,Stmt,Binary,Unary};
+use parser::{Parser,TokenType};
+use value::Value;
 
-pub struct Context {
-    pub environment: Environment
+pub trait Context {
+    fn println(&mut self, &Value);
+    fn env(&self) -> &Environment;
+    fn env_mut(&mut self) -> &mut Environment;
 }
 
-impl Context {
+pub struct StandardContext {
+    environment: Environment,
+}
+
+impl StandardContext {
     pub fn new() -> Self {
-        Context {
+        StandardContext {
             environment: Environment::new()
         }
+    }
+}
+
+impl Context for StandardContext {
+    fn env(&self) -> &Environment {
+        &self.environment
+    }
+
+    fn env_mut(&mut self) -> &mut Environment {
+        &mut self.environment
+    }
+
+    fn println(&mut self, v: &Value) {
+        println!("{}", v);
     }
 }
 
@@ -28,12 +46,12 @@ impl<'t> Eval for Stmt<'t> {
             Stmt::Expression(ref inner) => { inner.eval(context)?; }
             Stmt::Print(ref inner) => {
                 let evald = inner.eval(context)?;
-                println!("{}", evald);
+                context.println(&evald);
             },
             Stmt::Var(ref tok, ref expr) => {
                 let val = expr.eval(context)?;
                 debug!("Set var '{}' to value {}", tok.value, val);
-                context.environment.bind(tok.value, val);
+                context.env_mut().bind(tok.value, val);
             }
         }
         Ok(Value::Void)
@@ -49,7 +67,7 @@ impl<'t> Eval for Expr<'t> {
             Expr::Literal(ref inner) => inner.eval(context),
             Expr::Var(ref token) => {
                 let var = token.value;
-                let env = &context.environment;
+                let env = context.env();
                 match env.lookup(var) {
                     None => return Err("Could not find var".into()),
                     Some(v) => {
@@ -132,5 +150,21 @@ impl<'t> Eval for Unary<'t> {
 impl Eval for Value {
     fn eval(&self, _: &mut Context) -> Result<Value> {
         Ok(self.clone())
+    }
+}
+
+impl<T> Eval for T
+    where
+        T: AsRef<str>
+{
+    fn eval(&self, context: &mut Context) -> Result<Value> {
+        let s = self.as_ref();
+        let mut parser = Parser::new(s);
+        let statements = parser.parse()?;
+        let mut last_value = Value::Void;
+        for stmt in statements {
+            last_value = stmt.eval(context)?;
+        }
+        Ok(last_value)
     }
 }

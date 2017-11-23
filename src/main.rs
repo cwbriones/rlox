@@ -17,7 +17,7 @@ use rustyline::error::ReadlineError;
 
 use parser::Parser;
 use eval::Eval;
-use eval::Context;
+use eval::StandardContext;
 use value::Value;
 use errors::Result;
 
@@ -26,6 +26,9 @@ mod environment;
 mod parser;
 mod eval;
 mod value;
+
+#[cfg(test)]
+mod tests;
 
 fn main() {
     env_logger::init().expect("Failed to initialize logger");
@@ -53,7 +56,7 @@ fn main() {
 
 fn repl() {
     let mut rl = rustyline::Editor::<()>::new();
-    let mut context = Context::new();
+    let mut context = StandardContext::new();
 
     println!("Welcome to lox! Use Ctrl-C to exit.");
     loop {
@@ -61,7 +64,7 @@ fn repl() {
         match readline {
             Ok(line) => {
                 rl.add_history_entry(&line);
-                match eval(&line, &mut context) {
+                match line.eval(&mut context) {
                     Ok(Value::Void) => {},
                     Ok(lit) => println!("{}", lit),
                     Err(err) => eprintln!("[error]: {}", err.description()),
@@ -86,16 +89,7 @@ fn run_file(filename: &str) -> Result<()> {
     let mut contents = String::new();
     file.read_to_string(&mut contents)?;
 
-    let mut context = Context::new();
-    eval(&contents, &mut context)?;
+    let mut context = StandardContext::new();
+    contents.eval(&mut context)?;
     Ok(())
-}
-
-fn eval(program: &str, context: &mut Context) -> Result<Value> {
-    let mut parser = Parser::new(program);
-    let statements = parser.parse()?;
-    for stmt in statements {
-        stmt.eval(context)?;
-    }
-    Ok(Value::Void)
 }
