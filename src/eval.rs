@@ -1,15 +1,11 @@
-use parser::Parser;
 use parser::Stmt;
 use parser::Expr;
 use parser::Binary;
 use parser::Unary;
+use parser::TokenType;
 
 use value::Value;
 use environment::Environment;
-
-use scanner::Token;
-use scanner::TokenType;
-use scanner::Scanner;
 
 use errors::*;
 
@@ -27,30 +23,6 @@ impl Context {
 
 pub trait Eval {
     fn eval(&self, context: &mut Context) -> Result<Value>;
-}
-
-impl<T> Eval for T
-    where
-        T: AsRef<str>
-{
-    fn eval(&self, context: &mut Context) -> Result<Value> {
-        let s = self.as_ref();
-        let scanner = Scanner::new(s);
-        let tokens = scanner.filter(|t| {
-            if let &Ok(Token{ty: TokenType::Comment, ..}) = t {
-                false
-            } else {
-                true
-            }
-        }).collect::<Result<Vec<Token>>>()?;
-
-        let mut parser = Parser::new(&tokens);
-        let statements = parser.parse()?;
-        for stmt in statements {
-            stmt.eval(context)?;
-        }
-        Ok(Value::Void)
-    }
 }
 
 impl<'t> Eval for Stmt<'t> {

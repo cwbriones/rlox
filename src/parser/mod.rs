@@ -25,11 +25,14 @@ use errors::*;
 use errors::Result;
 
 use value::Value;
+use self::scanner::Scanner;
 
-use scanner::Token;
-use scanner::TokenType;
-use scanner::Keyword;
-use scanner::Scanner;
+pub use self::scanner::Token;
+pub use self::scanner::TokenType;
+pub use self::scanner::Keyword;
+
+
+mod scanner;
 
 pub struct Parser<'t> {
     scanner: Peekable<Scanner<'t>>,

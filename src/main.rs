@@ -16,6 +16,7 @@ use std::error::Error;
 
 use rustyline::error::ReadlineError;
 
+use parser::Parser;
 use eval::Eval;
 use eval::Context;
 use value::Value;
@@ -24,7 +25,6 @@ use errors::Result;
 mod errors;
 mod environment;
 mod parser;
-mod scanner;
 mod eval;
 mod value;
 
@@ -42,7 +42,7 @@ fn main() {
             },
             sourcefile => {
                 if let Err(err) = run_file(sourcefile) {
-                    println!("Error: {}", err);
+                    eprintln!("[error]: {}", err);
                     ::std::process::exit(1);
                 }
                 ::std::process::exit(0);
@@ -62,10 +62,10 @@ fn repl() {
         match readline {
             Ok(line) => {
                 rl.add_history_entry(&line);
-                match line.eval(&mut context) {
+                match eval(&line, &mut context) {
                     Ok(Value::Void) => {},
                     Ok(lit) => println!("{}", lit),
-                    Err(err) => println!("[error]: {}", err.description()),
+                    Err(err) => eprintln!("[error]: {}", err.description()),
                 }
             },
             Err(ReadlineError::Interrupted) => {
@@ -88,7 +88,15 @@ fn run_file(filename: &str) -> Result<()> {
     file.read_to_string(&mut contents)?;
 
     let mut context = Context::new();
-
-    contents.eval(&mut context)?;
+    eval(&contents, &mut context)?;
     Ok(())
+}
+
+fn eval(program: &str, context: &mut Context) -> Result<Value> {
+    let mut parser = Parser::new(program);
+    let statements = parser.parse()?;
+    for stmt in statements {
+        stmt.eval(context)?;
+    }
+    Ok(Value::Void)
 }
