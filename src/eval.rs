@@ -1,8 +1,5 @@
-use parser::Stmt;
-use parser::Expr;
-use parser::Binary;
-use parser::Unary;
 use parser::TokenType;
+use parser::ast::{Expr,Stmt,Binary,Unary};
 
 use value::Value;
 use environment::Environment;

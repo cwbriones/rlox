@@ -1,6 +1,5 @@
 use std::collections::BTreeMap;
-use value::Value; 
-use errors::*;
+use value::Value;
 
 use std::rc::Rc;
 use std::cell::RefCell;
@@ -70,7 +69,7 @@ impl Environment {
     }
 
     pub fn is_defined(&mut self, key: &str) -> bool {
-        let mut inner = self.node.borrow_mut();
+        let inner = self.node.borrow_mut();
         inner.map.contains_key(key)
     }
 

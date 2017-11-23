@@ -9,7 +9,6 @@ extern crate env_logger;
 extern crate log;
 
 use std::env;
-use std::io::stdin;
 use std::io::prelude::*;
 use std::fs::File;
 use std::error::Error;
