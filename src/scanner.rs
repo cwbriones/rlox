@@ -1,19 +1,25 @@
 use std::str::CharIndices;
+use std::iter::Peekable;
 
 use errors::*;
-use multipeek::MultiPeek;
-use multipeek::multipeek;
 
-#[derive(PartialEq, Debug)]
+use std::str;
+
+#[derive(Debug, Clone, Copy)]
 pub struct Token<'a> {
     pub ty: TokenType<'a>,
     pub value: &'a str,
+    pub position: Position,
+}
+
+#[derive(PartialEq, Debug, Clone, Copy)]
+pub struct Position {
     pub start: usize,
     pub end: usize,
     pub line: usize,
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone, Copy)]
 pub enum TokenType<'s> {
     LeftParen,
     RightParen,
@@ -41,7 +47,7 @@ pub enum TokenType<'s> {
     Keyword(Keyword),
 }
 
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug, Clone, Copy)]
 pub enum Keyword {
     Class,
     Var,
@@ -61,33 +67,35 @@ pub enum Keyword {
     While,
 }
 
-impl Keyword {
-    pub fn from_str(word: &str) -> Option<Keyword> {
+impl str::FromStr for Keyword {
+    type Err = ();
+
+    fn from_str(word: &str) -> ::std::result::Result<Self, Self::Err> {
         match word {
-            "class"  => Some(Keyword::Class),
-            "var"    => Some(Keyword::Var),
-            "and"    => Some(Keyword::And),
-            "else"   => Some(Keyword::Else),
-            "false"  => Some(Keyword::False),
-            "for"    => Some(Keyword::For),
-            "fun"    => Some(Keyword::Fun),
-            "if"     => Some(Keyword::If),
-            "nil"    => Some(Keyword::Nil),
-            "or"     => Some(Keyword::Or),
-            "print"  => Some(Keyword::Print),
-            "return" => Some(Keyword::Return),
-            "super"  => Some(Keyword::Super),
-            "this"   => Some(Keyword::This),
-            "true"   => Some(Keyword::True),
-            "while"  => Some(Keyword::While),
-            _ => None,
+            "class"  => Ok(Keyword::Class),
+            "var"    => Ok(Keyword::Var),
+            "and"    => Ok(Keyword::And),
+            "else"   => Ok(Keyword::Else),
+            "false"  => Ok(Keyword::False),
+            "for"    => Ok(Keyword::For),
+            "fun"    => Ok(Keyword::Fun),
+            "if"     => Ok(Keyword::If),
+            "nil"    => Ok(Keyword::Nil),
+            "or"     => Ok(Keyword::Or),
+            "print"  => Ok(Keyword::Print),
+            "return" => Ok(Keyword::Return),
+            "super"  => Ok(Keyword::Super),
+            "this"   => Ok(Keyword::This),
+            "true"   => Ok(Keyword::True),
+            "while"  => Ok(Keyword::While),
+            _ => Err(()),
         }
     }
 }
 
 pub struct Scanner<'a> {
     source: &'a str,
-    iter: MultiPeek<CharIndices<'a>>,
+    iter: Peekable<CharIndices<'a>>,
     current: usize,
     line: usize,
 }
@@ -96,7 +104,7 @@ impl<'a> Scanner<'a> {
     pub fn new(source: &'a str) -> Self {
         Scanner {
             source: source,
-            iter: multipeek(source.char_indices()),
+            iter: source.char_indices().peekable(),
             current: 0,
             line: 1,
         }
@@ -114,10 +122,6 @@ impl<'a> Scanner<'a> {
 
     fn peek(&mut self) -> Option<char> {
         self.iter.peek().map(|&(_, c)| c)
-    }
-
-    fn peekn(&mut self, n: usize) -> Option<char> {
-        self.iter.peekn(n).map(|&(_, c)| c)
     }
 
     fn token_contents(&mut self, start: usize) -> &'a str {
@@ -198,9 +202,12 @@ impl<'a> Scanner<'a> {
                     Ok(ty) => ty,
                     Err(err) => return Some(Err(err)),
                 }
-            }
+            },
             '0'...'9' => {
-                self.number(start)
+                match self.number(start) {
+                    Ok(ty) => ty,
+                    Err(err) => return Some(Err(err)),
+                }
             },
             'a'...'z' | 'A'...'Z' | '_' => {
                 self.identifier(start)
@@ -211,24 +218,30 @@ impl<'a> Scanner<'a> {
         let token_contents = self.token_contents(start);
         let token_len = token_contents.len();
 
+        let position = Position {
+            start: start,
+            end: start + token_len,
+            line: self.line,
+        };
         let token = Token {
             ty: ty,
-            start: start,
-            end : start + token_len,
             value: token_contents,
-            line: self.line,
+            position: position,
         };
         Some(Ok(token))
     }
 
-    fn advance_while<F>(&mut self, f: F) where for<'r> F: Fn(&'r char,) -> bool {
+    fn advance_while<F>(&mut self, f: F) -> usize where for<'r> F: Fn(&'r char,) -> bool {
+        let mut count = 0;
         while let Some(c) = self.peek() {
             if f(&c) {
                 self.advance();
+                count += 1;
             } else {
                 break;
             }
         }
+        count
     }
 
     fn identifier(&mut self, start: usize) -> TokenType<'a> {
@@ -239,31 +252,26 @@ impl<'a> Scanner<'a> {
             c == '_'
         });
         let word = self.token_contents(start);
-        if let Some(keyword) = Keyword::from_str(word) {
+        if let Ok(keyword) = str::parse::<Keyword>(word) {
             TokenType::Keyword(keyword)
         } else {
             TokenType::Identifier
         }
     }
 
-    fn number(&mut self, start: usize) -> TokenType<'a> {
+    fn number(&mut self, start: usize) -> Result<TokenType<'a>> {
         self.advance_while(|&c| '0' <= c && c <= '9');
-
-        // Look for a fractional part
-        let first = self.peek();
-        let second = self.peekn(1);
-
-        let num = if let (Some('.'), Some('0'...'9')) = (first, second) {
+        if let Some('.') = self.peek() {
+            // Look for a fractional part
             // Consume the '.'
             self.advance();
-            self.advance_while(|&c| '0' <= c && c <= '9');
-            let token_contents = self.token_contents(start);
-            token_contents.parse::<f64>().unwrap()
-        } else {
-            let token_contents = self.token_contents(start);
-            token_contents.parse::<u64>().unwrap() as f64
+            let count = self.advance_while(|&c| '0' <= c && c <= '9');
+            if count == 0 {
+                return Err(ErrorKind::UnexpectedChar('.').into());
+            }
         };
-        TokenType::Number(num)
+        let num = self.token_contents(start).parse::<f64>().unwrap();
+        Ok(TokenType::Number(num))
     }
 
     fn is_at_end(&mut self) -> bool {
@@ -272,11 +280,11 @@ impl<'a> Scanner<'a> {
 
     fn string(&mut self, start: usize) -> Result<TokenType<'a>> {
         self.advance_while(|&c| c != '"');
-        // consume the "
-        self.advance();
         if self.is_at_end() {
             return Err(ErrorKind::UnterminatedString.into());
         }
+        // consume the "
+        self.advance();
         let token_contents = self.token_contents(start);
         Ok(TokenType::String(token_contents.trim_matches('"')))
     }
@@ -287,5 +295,117 @@ impl<'a> Iterator for Scanner<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         self.scan_token()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_all_types() {
+        let prog = r#"
+        var a = 1;
+        // This is a comment
+        "Some string";
+        {
+            a.method_call(1, 2);
+        }
+        // Doesn't need to be syntactically correct
+        + - * /
+        ! != ==
+        > >= < <=
+        "#;
+        let tokens = Scanner::new(prog).collect::<Result<Vec<_>>>().unwrap();
+        let types = tokens.iter().map(|t| t.ty).collect::<Vec<_>>();
+        assert_eq!(&[
+            TokenType::Keyword(Keyword::Var),
+            TokenType::Identifier,
+            TokenType::Equal,
+            TokenType::Number(1.0),
+            TokenType::Semicolon,
+            TokenType::Comment,
+            TokenType::String("Some string"),
+            TokenType::Semicolon,
+            TokenType::LeftBrace,
+            TokenType::Identifier,
+            TokenType::Dot,
+            TokenType::Identifier,
+            TokenType::LeftParen,
+            TokenType::Number(1.0),
+            TokenType::Comma,
+            TokenType::Number(2.0),
+            TokenType::RightParen,
+            TokenType::Semicolon,
+            TokenType::RightBrace,
+            TokenType::Comment,
+            TokenType::Plus,
+            TokenType::Minus,
+            TokenType::Star,
+            TokenType::Slash,
+            TokenType::Bang,
+            TokenType::BangEq,
+            TokenType::EqualEq,
+            TokenType::GreaterThan,
+            TokenType::GreaterThanEq,
+            TokenType::LessThan,
+            TokenType::LessThanEq,
+        ], &types[..]);
+    }
+
+    // #[test]
+    // fn test_token_info() {
+    //     unimplemented!()
+    // }
+
+    #[test]
+    fn test_numbers() {
+        let prog = "1 2.0 3.14159";
+        let tokens = Scanner::new(prog).collect::<Result<Vec<_>>>().unwrap();
+        let types = tokens.iter().map(|t| &t.ty).collect::<Vec<_>>();
+        assert_eq!(&[
+            &TokenType::Number(1.0),
+            &TokenType::Number(2.0),
+            &TokenType::Number(3.14159),
+        ], &types[..]);
+
+        // Leading dot is not an error, but won't be parsed as a number
+        let prog = ".1";
+        let tokens = Scanner::new(prog).collect::<Result<Vec<_>>>().unwrap();
+        let types = tokens.iter().map(|t| t.ty).collect::<Vec<_>>();
+        assert_eq!(&[
+            TokenType::Dot,
+            TokenType::Number(1.0),
+        ], &types[..]);
+
+        // We explicitly disallow a decimal point without a fractional part
+        let err = Scanner::new("1.").next().unwrap().unwrap_err();
+        match *err.kind() {
+            ErrorKind::UnexpectedChar('.') => (),
+            _ => panic!("Expected ErrorKind::UnexpectedChar"),
+        }
+    }
+
+    #[test]
+    fn test_string() {
+        let token = Scanner::new("\"Hello, World\"").next().unwrap().unwrap();
+        assert_eq!(token.ty, TokenType::String("Hello, World"));
+    }
+
+    fn test_escaped_string() {
+        let prog = r#"
+        "\"Hello, World!\"\n"
+        "#;
+        let token = Scanner::new(prog).next().unwrap().unwrap();
+        assert_eq!(token.ty, TokenType::String("\"Hello, World!\"\n"));
+    }
+
+    #[test]
+    fn unclosed_string() {
+        let err = Scanner::new("\"Hello, World!").next().unwrap().unwrap_err();
+        match *err.kind() {
+            ErrorKind::UnterminatedString => (),
+            _ => panic!("Expected ErrorKind::UnterminatedString"),
+        }
     }
 }

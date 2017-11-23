@@ -18,8 +18,8 @@
 /// ```
 
 use std::fmt::Debug;
-use std::fmt::Display;
 use std::fmt::Write;
+use std::iter::Peekable;
 
 use errors::*;
 use errors::Result;
@@ -29,9 +29,10 @@ use value::Value;
 use scanner::Token;
 use scanner::TokenType;
 use scanner::Keyword;
+use scanner::Scanner;
 
 pub struct Parser<'t> {
-    tokens: &'t [Token<'t>],
+    scanner: Peekable<Scanner<'t>>,
     current: usize,
 }
 
@@ -88,7 +89,7 @@ impl<'t> Debug for Expr<'t> {
 pub enum Stmt<'t> {
     Expression(Expr<'t>),
     Print(Expr<'t>),
-    Var(&'t Token<'t>, Expr<'t>)
+    Var(Token<'t>, Expr<'t>)
 }
 
 pub enum Expr<'t> {
@@ -96,17 +97,17 @@ pub enum Expr<'t> {
     Grouping(Box<Expr<'t>>),
     Literal(Value),
     Unary(Unary<'t>),
-    Var(&'t Token<'t>),
+    Var(Token<'t>),
 }
 
 pub struct Binary<'t> {
     pub lhs: Box<Expr<'t>>,
     pub rhs: Box<Expr<'t>>,
-    pub operator: &'t Token<'t>,
+    pub operator: Token<'t>,
 }
 
 impl<'t> Binary<'t> {
-    fn new(lhs: Expr<'t>, rhs: Expr<'t>, operator: &'t Token<'t>) -> Self {
+    fn new(lhs: Expr<'t>, rhs: Expr<'t>, operator: Token<'t>) -> Self {
         Binary {
             lhs: Box::new(lhs),
             rhs: Box::new(rhs),
@@ -116,7 +117,7 @@ impl<'t> Binary<'t> {
 }
 
 pub struct Unary<'t> {
-    pub operator: &'t Token<'t>,
+    pub operator: Token<'t>,
     pub unary: Box<Expr<'t>>,
 }
 
@@ -126,12 +127,11 @@ macro_rules! binary_expr_impl (
     ($name:ident, $inner:ident, $($pattern:pat)|*) => (
         fn $name(&mut self) -> Result<Expr<'t>> {
             let mut expr = self.$inner()?;
-            while let Some(&Token{ref ty, ..}) = self.peek() {
-                match *ty {
-                    $($pattern)|* => { self.advance(); },
+            while let Ok(Token{ref ty, ..}) = self.peek() {
+                let operator = match *ty {
+                    $($pattern)|* => { self.advance() },
                     _ => break,
-                }
-                let operator = self.previous().unwrap();
+                };
                 let rhs = self.$inner()?;
                 let binary = Binary::new(expr, rhs, operator);
 
@@ -143,9 +143,10 @@ macro_rules! binary_expr_impl (
 );
 
 impl<'t> Parser<'t> {
-    pub fn new(tokens: &'t [Token<'t>]) -> Self {
+    pub fn new(program: &'t str) -> Self {
+        let scanner = Scanner::new(program);
         Parser {
-            tokens: tokens,
+            scanner: scanner.peekable(),
             current: 0,
         }
     }
@@ -153,7 +154,7 @@ impl<'t> Parser<'t> {
     // program → declaration* eof ;
     pub fn parse(&mut self) -> Result<Vec<Stmt<'t>>> {
         let mut statements = Vec::new();
-        while let Some(_) = self.peek() {
+        while self.has_next() {
             match self.declaration() {
                 Ok(stmt) => statements.push(stmt),
                 Err(_)   => self.synchronize(),
@@ -165,7 +166,7 @@ impl<'t> Parser<'t> {
     // declaration → varDecl
     //             | statement ;
     fn declaration(&mut self) -> Result<Stmt<'t>> {
-        if let TokenType::Keyword(Keyword::Var) = *self.peek_type()? {
+        if let TokenType::Keyword(Keyword::Var) = self.peek_type()? {
             self.advance();
             return self.var_decl();
         }
@@ -177,7 +178,7 @@ impl<'t> Parser<'t> {
         self.expect(TokenType::Identifier, "Expected identifier after keyword 'var'")?;
         let ident = self.advance();
         let mut initializer = Expr::Literal(Value::Nil);
-        if let TokenType::Equal = *self.peek_type()? {
+        if let TokenType::Equal = self.peek_type()? {
             initializer = self.expression()?;
         }
         self.expect(TokenType::Semicolon, "Expected semicolon after variable declaration")?;
@@ -187,7 +188,7 @@ impl<'t> Parser<'t> {
     // statement  → exprStmt
     //            | printStmt ;
     fn statement(&mut self) -> Result<Stmt<'t>> {
-        match *self.peek_type()? {
+        match self.peek_type()? {
             TokenType::Keyword(Keyword::Print) => {
                 self.advance();
                 self.print_statement()
@@ -203,7 +204,7 @@ impl<'t> Parser<'t> {
     }
 
     fn expect(&mut self, token_type: TokenType, msg: &str) -> Result<()> {
-        if *self.peek_type()? == token_type {
+        if self.peek_type()? == token_type {
             self.advance();
             Ok(())
         } else {
@@ -239,12 +240,12 @@ impl<'t> Parser<'t> {
     //            | primary
     fn unary(&mut self) -> Result<Expr<'t>> {
         match self.peek_type()? {
-            &TokenType::Bang | &TokenType::Minus => {
-                let op = self.advance();
+            TokenType::Bang | TokenType::Minus => {
+                let operator = self.advance();
                 let unary = self.unary()?;
 
                 Ok(Expr::Unary(Unary {
-                    operator: &op,
+                    operator: operator,
                     unary: Box::new(unary),
                 }))
             }
@@ -258,38 +259,38 @@ impl<'t> Parser<'t> {
     fn primary(&mut self) -> Result<Expr<'t>> {
         let peek_type = self.peek_type()?;
         match peek_type {
-            &TokenType::Keyword(Keyword::Nil) => {
+            TokenType::Keyword(Keyword::Nil) => {
                 self.advance();
                 Ok(Expr::Literal(Value::Nil))
             },
-            &TokenType::Keyword(Keyword::True) => {
+            TokenType::Keyword(Keyword::True) => {
                 self.advance();
                 Ok(Expr::Literal(Value::True))
             },
-            &TokenType::Keyword(Keyword::False) => {
+            TokenType::Keyword(Keyword::False) => {
                 self.advance();
                 Ok(Expr::Literal(Value::False))
             },
-            &TokenType::String(s) => {
+            TokenType::String(s) => {
                 self.advance();
                 Ok(Expr::Literal(Value::String(s.into())))
             },
-            &TokenType::Number(n) => {
+            TokenType::Number(n) => {
                 self.advance();
                 Ok(Expr::Literal(Value::Number(n)))
             },
-            &TokenType::LeftParen => {
+            TokenType::LeftParen => {
                 self.advance();
                 let expr = self.expression()?;
                 match self.peek_type()? {
-                    &TokenType::RightParen => {
+                    TokenType::RightParen => {
                         self.advance();
                         Ok(Expr::Grouping(Box::new(expr)))
                     }
                     _ => Err("Expect ')' after expression".into()),
                 }
             },
-            &TokenType::Identifier => {
+            TokenType::Identifier => {
                 let token = self.advance();
                 Ok(Expr::Var(token))
             },
@@ -300,11 +301,15 @@ impl<'t> Parser<'t> {
     /// Discards tokens until a statement or expression boundary.
     fn synchronize(&mut self) {
         while self.peek_type().is_ok() {
-            if let Some(&TokenType::Semicolon) = self.previous_type() {
+            let token = self.advance();
+            // We are already at an explicit statement boundary
+            if token.ty == TokenType::Semicolon {
                 return;
             }
+            // If the next token is a keyword we consider this an implicit
+            // statement boundary
             let peek_type = self.peek_type().unwrap();
-            match *peek_type {
+            match peek_type {
                 TokenType::Keyword(Keyword::Class)
                 | TokenType::Keyword(Keyword::Fun)
                 | TokenType::Keyword(Keyword::Var)
@@ -313,38 +318,32 @@ impl<'t> Parser<'t> {
                 | TokenType::Keyword(Keyword::While)
                 | TokenType::Keyword(Keyword::Return)
                 | TokenType::Keyword(Keyword::Print) => return,
-                _ => { self.advance(); },
+                _ => {},
             }
         }
-        if let Some(token) = self.peek() {
-            debug!("Synchonized at: {:?}", token);
-        }
     }
 
-    fn advance(&mut self) -> &'t Token<'t> {
+    fn advance(&mut self) -> Token<'t> {
+        // FIXME: Don't unwrap
+        let token = self.scanner.next().unwrap().unwrap();
         self.current += 1;
-        self.previous().unwrap()
+        token
     }
 
-    fn peek(&self) -> Option<&'t Token<'t>> {
-        self.tokens.get(self.current)
+    fn has_next(&mut self) -> bool {
+        self.scanner.peek().is_some()
     }
 
-    fn peek_type(&self) -> Result<&'t TokenType<'t>> {
-        let token_type = self.tokens.get(self.current).map(|token| {
-            &token.ty
-        });
-        match token_type {
-            Some(ty) => Ok(ty),
+    fn peek(&mut self) -> Result<Token<'t>> {
+        match self.scanner.peek() {
+            Some(&Ok(tok)) => Ok(tok),
+            // FIXME: Pass up the error
+            Some(&Err(_)) => Err("There was a scanning error".into()),
             None => Err(ErrorKind::UnexpectedEOF.into()),
         }
     }
 
-    fn previous(&self) -> Option<&'t Token<'t>> {
-        self.tokens.get(self.current - 1)
-    }
-
-    fn previous_type(&self) -> Option<&'t TokenType<'t>> {
-        self.tokens.get(self.current - 1).map(|t| &t.ty)
+    fn peek_type(&mut self) -> Result<TokenType<'t>> {
+        self.peek().map(|t| t.ty)
     }
 }

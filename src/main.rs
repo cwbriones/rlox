@@ -25,7 +25,6 @@ mod errors;
 mod environment;
 mod parser;
 mod scanner;
-mod multipeek;
 mod eval;
 mod value;
 
