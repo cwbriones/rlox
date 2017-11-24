@@ -51,5 +51,5 @@ macro_rules! define_test (
     );
 );
 
-define_test!(simple_env);
+// define_test!(simple_env);
 define_test!(arithmetic);

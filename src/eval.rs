@@ -43,7 +43,7 @@ pub trait Eval {
 impl<'t> Eval for Stmt<'t> {
     fn eval(&self, context: &mut Context) -> Result<Value> {
         match *self {
-            Stmt::Expression(ref inner) => { inner.eval(context)?; }
+            Stmt::Expr(ref inner) => { inner.eval(context)?; }
             Stmt::Print(ref inner) => {
                 let evald = inner.eval(context)?;
                 context.println(&evald);
@@ -131,7 +131,7 @@ impl<'t> Eval for Binary<'t> {
             BinaryOperator::Slash => numeric_binary_op!(/, lhs, rhs),
             BinaryOperator::Equal => bool_binary_op!(==, lhs, rhs),
             BinaryOperator::BangEq => bool_binary_op!(!=, lhs, rhs),
-            _ => unreachable!(),
+            _ => unimplemented!(">, >=, <, <="),
         }
     }
 }
@@ -157,7 +157,6 @@ impl<'t> Eval for Unary<'t> {
                     Ok(Value::True)
                 }
             },
-            _ => unreachable!(),
         }
     }
 }

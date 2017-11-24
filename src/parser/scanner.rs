@@ -321,7 +321,14 @@ impl<'a> Iterator for Scanner<'a> {
     type Item = Result<Token<'a>>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.scan_token()
+        while let Some(item) = self.scan_token() {
+            match item {
+                Ok(t) if t.ty != TokenType::Comment => return Some(Ok(t)),
+                Err(e) => return Some(Err(e)),
+                _ => {},
+            }
+        }
+        None
     }
 }
 
@@ -351,7 +358,6 @@ mod tests {
             TokenType::Equal,
             TokenType::Number(1.0),
             TokenType::Semicolon,
-            TokenType::Comment,
             TokenType::String("Some string"),
             TokenType::Semicolon,
             TokenType::LeftBrace,
@@ -365,7 +371,6 @@ mod tests {
             TokenType::RightParen,
             TokenType::Semicolon,
             TokenType::RightBrace,
-            TokenType::Comment,
             TokenType::Plus,
             TokenType::Minus,
             TokenType::Star,

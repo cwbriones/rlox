@@ -2,15 +2,15 @@ use std::fmt::Debug;
 use std::fmt::Write;
 
 use value::Value;
-use super::TokenType;
 
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub enum Stmt<'t> {
-    Expression(Expr<'t>),
+    Expr(Expr<'t>),
     Print(Expr<'t>),
     Var(&'t str, Expr<'t>)
 }
 
+#[derive(PartialEq)]
 pub enum Expr<'t> {
     Binary(Binary<'t>),
     Grouping(Box<Expr<'t>>),
@@ -20,7 +20,7 @@ pub enum Expr<'t> {
 }
 
 impl<'t> Expr<'t> {
-    pub(super) fn binary(lhs: Expr<'t>, rhs: Expr<'t>, operator: BinaryOperator) -> Self {
+    pub(super) fn binary(operator: BinaryOperator, lhs: Expr<'t>, rhs: Expr<'t>) -> Self {
         Expr::Binary(Binary {
             lhs: Box::new(lhs),
             rhs: Box::new(rhs),
@@ -28,7 +28,7 @@ impl<'t> Expr<'t> {
         })
     }
 
-    pub(super) fn unary(unary: Expr<'t>, operator: UnaryOperator) -> Self {
+    pub(super) fn unary(operator: UnaryOperator, unary: Expr<'t>) -> Self {
         Expr::Unary(Unary {
             operator: operator,
             unary: Box::new(unary),
@@ -44,13 +44,14 @@ impl<'t> Debug for Expr<'t> {
     }
 }
 
+#[derive(PartialEq)]
 pub struct Binary<'t> {
     pub lhs: Box<Expr<'t>>,
     pub rhs: Box<Expr<'t>>,
     pub operator: BinaryOperator,
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(PartialEq, Debug, Copy, Clone)]
 pub enum BinaryOperator {
     Equal,
     BangEq,
@@ -64,12 +65,13 @@ pub enum BinaryOperator {
     Star,
 }
 
+#[derive(PartialEq)]
 pub struct Unary<'t> {
     pub operator: UnaryOperator,
     pub unary: Box<Expr<'t>>,
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(PartialEq, Debug, Copy, Clone)]
 pub enum UnaryOperator {
     Minus,
     Bang,

@@ -23,7 +23,7 @@ use errors::*;
 use errors::Result;
 use value::Value;
 use self::scanner::Scanner;
-use self::ast::{Expr, Stmt, Unary, Binary};
+use self::ast::{Expr, Stmt};
 
 use self::scanner::Token;
 use self::scanner::TokenType;
@@ -50,7 +50,7 @@ macro_rules! binary_expr_impl (
                 };
                 let rhs = self.$inner()?;
                 let operator = tok.ty.into_binary().unwrap();
-                expr = Expr::binary(expr, rhs, operator);
+                expr = Expr::binary(operator, expr, rhs);
             }
             Ok(expr)
         }
@@ -128,7 +128,7 @@ impl<'t> Parser<'t> {
     fn expression_statement(&mut self) -> Result<Stmt<'t>> {
         let expr = self.expression()?;
         self.expect(TokenType::Semicolon, "Expected ';' after value")?;
-        Ok(Stmt::Expression(expr))
+        Ok(Stmt::Expr(expr))
     }
 
     // expression → equality
@@ -158,7 +158,7 @@ impl<'t> Parser<'t> {
                 let operator = tok.ty.into_unary().unwrap();
                 let unary = self.unary()?;
 
-                Ok(Expr::unary(unary, operator))
+                Ok(Expr::unary(operator, unary))
             }
             _ => self.primary()
         }
@@ -262,6 +262,9 @@ impl<'t> Parser<'t> {
 #[cfg(test)]
 mod tests {
     use super::Parser;
+    use super::ast::*;
+    
+    use value::Value;
 
     #[test]
     fn expression() {
@@ -273,8 +276,19 @@ mod tests {
 
         let mut parser = Parser::new(prog);
         let statements = parser.parse().unwrap();
-        let s = format!("{:?}", statements);
-        println!("{}", s);
+        assert_eq!(vec![
+            Stmt::Expr(Expr::Literal(Value::Number(1.0))),
+            Stmt::Expr(Expr::Literal(Value::String("foobar".into()))),
+            Stmt::Print(Expr::binary(
+                BinaryOperator::Star,
+                Expr::Grouping(Box::new(Expr::binary(
+                    BinaryOperator::Plus,
+                    Expr::Literal(Value::Number(1.0)),
+                    Expr::Literal(Value::Number(2.0)),
+                ))),
+                Expr::unary(UnaryOperator::Minus, Expr::Literal(Value::Number(3.0))),
+            )),
+        ], statements);
     }
 
     #[test]
@@ -286,21 +300,12 @@ mod tests {
 
         let mut parser = Parser::new(prog);
         let statements = parser.parse().unwrap();
-        let s = format!("{:?}", statements);
-        assert_eq!("", s);
+        assert_eq!(vec![
+            Stmt::Expr(Expr::binary(
+                BinaryOperator::Plus,
+                Expr::Literal(Value::Number(1.0)),
+                Expr::Literal(Value::Number(1.0)),
+            )),
+        ], statements);
     }
-
-    // #[test]
-    // fn parse_declaration() {
-    //     let prog = r#"
-    //     var a;
-    //     var b = 2;
-    //     "#;
-    //
-    //     let mut parser = Parser::new(prog);
-    //     let statements = parser.parse().unwrap();
-    //     let s = format!("{:?}", statements);
-    //     println!("{}", s);
-    // }
-
 }
