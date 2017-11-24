@@ -32,6 +32,16 @@ impl Context for CapturingContext {
         &mut self.environment
     }
 
+    fn push_env(&mut self) {
+        self.environment = self.environment.extend();
+    }
+
+    fn pop_env(&mut self) {
+        if let Some(p) = self.environment.parent() {
+            self.environment = p;
+        }
+    }
+
     fn println(&mut self, v: &Value) {
         writeln!(&mut self.buf, "{}", v).expect("Failed to write to buffer");
     }
@@ -51,5 +61,5 @@ macro_rules! define_test (
     );
 );
 
-// define_test!(simple_env);
+define_test!(variables_and_scope);
 define_test!(arithmetic);

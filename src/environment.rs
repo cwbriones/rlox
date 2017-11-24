@@ -68,11 +68,6 @@ impl Environment {
         inner.map.insert(key.into(), Rc::new(Value::Nil));
     }
 
-    pub fn is_defined(&mut self, key: &str) -> bool {
-        let inner = self.node.borrow_mut();
-        inner.map.contains_key(key)
-    }
-
     pub fn bind(&mut self, key: &str, value: Value) {
         let mut inner = self.node.borrow_mut();
         inner.map.insert(key.into(), Rc::new(value));
@@ -84,8 +79,14 @@ impl Environment {
         ));
         Environment { node }
     }
+
+    pub fn parent(&self) -> Option<Self> {
+        let node = self.node.borrow();
+        node.parent().map(|rc| Environment { node: rc })
+    }
 }
 
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -112,7 +113,7 @@ mod tests {
         assert_eq!(Some(Rc::new(Value::Number(1.0))), inner.lookup("a"));
         // outer scope only
         assert_eq!(Some(Rc::new(Value::Number(3.0))), inner.lookup("c"));
-        // inner wins over outer
+        // shadowed var
         assert_eq!(Some(Rc::new(Value::Number(2.0))), inner.lookup("b"));
         // neither
         assert_eq!(None, inner.lookup("d"));
@@ -122,7 +123,7 @@ mod tests {
     fn define() {
         let mut env = Environment::new();
         env.define("a");
-        assert!(env.is_defined("a"));
+        assert!(env.lookup("a").is_some());
         assert_eq!(Some(Rc::new(Value::Nil)), env.lookup("a"));
     }
 }

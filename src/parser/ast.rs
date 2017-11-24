@@ -3,11 +3,49 @@ use std::fmt::Write;
 
 use value::Value;
 
+#[cfg(test)]
+pub mod dsl {
+    use super::*;
+
+    pub fn binary<'t>(operator: BinaryOperator, lhs: Expr<'t>, rhs: Expr<'t>) -> Expr<'t> {
+        Expr::binary(operator, lhs, rhs)
+    }
+
+    pub fn unary<'t>(operator: UnaryOperator, unary: Expr<'t>) -> Expr<'t> {
+        Expr::unary(operator, unary)
+    }
+
+    pub fn number<'t>(n: f64) -> Expr<'t> {
+        Expr::Literal(Value::Number(n))
+    }
+
+    pub fn nil<'t>() -> Expr<'t> {
+        Expr::Literal(Value::Nil)
+    }
+
+    // pub fn truelit<'t>() -> Expr<'t> {
+    //     Expr::Literal(Value::True)
+    // }
+    //
+    // pub fn falselit<'t>() -> Expr<'t> {
+    //     Expr::Literal(Value::False)
+    // }
+
+    pub fn string<'t, S: Into<String>>(s: S) -> Expr<'t> {
+        Expr::Literal(Value::String(s.into()))
+    }
+
+    pub fn grouping<'t>(expr: Expr<'t>) -> Expr<'t> {
+        Expr::Grouping(Box::new(expr))
+    }
+}
+
 #[derive(PartialEq, Debug)]
 pub enum Stmt<'t> {
     Expr(Expr<'t>),
     Print(Expr<'t>),
-    Var(&'t str, Expr<'t>)
+    Var(&'t str, Expr<'t>),
+    Block(Vec<Stmt<'t>>),
 }
 
 #[derive(PartialEq)]

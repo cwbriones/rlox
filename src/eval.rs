@@ -8,6 +8,8 @@ pub trait Context {
     fn println(&mut self, &Value);
     fn env(&self) -> &Environment;
     fn env_mut(&mut self) -> &mut Environment;
+    fn push_env(&mut self);
+    fn pop_env(&mut self);
 }
 
 pub struct StandardContext {
@@ -31,6 +33,16 @@ impl Context for StandardContext {
         &mut self.environment
     }
 
+    fn push_env(&mut self) {
+        self.environment = self.environment.extend();
+    }
+
+    fn pop_env(&mut self) {
+        if let Some(p) = self.environment.parent() {
+            self.environment = p;
+        }
+    }
+
     fn println(&mut self, v: &Value) {
         println!("{}", v);
     }
@@ -52,7 +64,14 @@ impl<'t> Eval for Stmt<'t> {
                 let val = expr.eval(context)?;
                 debug!("Set var '{}' to value {}", var, val);
                 context.env_mut().bind(var, val);
-            }
+            },
+            Stmt::Block(ref stmts) => {
+                context.push_env();
+                for inner in stmts.iter() {
+                    inner.eval(context)?;
+                }
+                context.pop_env();
+            },
         }
         Ok(Value::Void)
     }
@@ -65,10 +84,10 @@ impl<'t> Eval for Expr<'t> {
             Expr::Binary(ref inner) => inner.eval(context),
             Expr::Unary(ref inner) => inner.eval(context),
             Expr::Literal(ref inner) => inner.eval(context),
-            Expr::Var(ref var) => {
+            Expr::Var(var) => {
                 let env = context.env();
                 match env.lookup(var) {
-                    None => return Err("Could not find var".into()),
+                    None => return Err(ErrorKind::UndefinedVariable(var.into()).into()),
                     Some(v) => {
                         return Ok((*v).clone())
                     }

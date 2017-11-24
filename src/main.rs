@@ -15,7 +15,6 @@ use std::error::Error;
 
 use rustyline::error::ReadlineError;
 
-use parser::Parser;
 use eval::Eval;
 use eval::StandardContext;
 use value::Value;

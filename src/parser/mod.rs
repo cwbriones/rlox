@@ -70,8 +70,15 @@ impl<'t> Parser<'t> {
     pub fn parse(&mut self) -> Result<Vec<Stmt<'t>>> {
         let mut statements = Vec::new();
         while self.has_next() {
-            let stmt = self.statement()?;
-            statements.push(stmt);
+            // TODO: This should return the errors encountered line by line
+            // in one pass
+            match self.declaration() {
+                Ok(stmt) => {
+                    println!("parse {:?}", stmt);
+                    statements.push(stmt);
+                },
+                Err(_)   => self.synchronize(),
+            }
         }
         Ok(statements)
     }
@@ -88,10 +95,10 @@ impl<'t> Parser<'t> {
 
     // varDecl → "var" IDENTIFIER ( "=" expression )? ";" ;
     fn var_decl(&mut self) -> Result<Stmt<'t>> {
-        self.expect(TokenType::Identifier, "Expected identifier after keyword 'var'")?;
-        let ident = self.advance();
+        let ident = self.expect(TokenType::Identifier, "Expected identifier after keyword 'var'")?;
         let mut initializer = Expr::Literal(Value::Nil);
         if let TokenType::Equal = self.peek_type()? {
+            self.advance();
             initializer = self.expression()?;
         }
         self.expect(TokenType::Semicolon, "Expected semicolon after variable declaration")?;
@@ -99,12 +106,17 @@ impl<'t> Parser<'t> {
     }
 
     // statement  → exprStmt
-    //            | printStmt ;
+    //            | printStmt
+    //            | block ;
     fn statement(&mut self) -> Result<Stmt<'t>> {
         match self.peek_type()? {
             TokenType::Keyword(Keyword::Print) => {
                 self.advance();
                 self.print_statement()
+            },
+            TokenType::LeftBrace => {
+                self.advance();
+                self.block()
             },
             _ => self.expression_statement()
         }
@@ -116,10 +128,23 @@ impl<'t> Parser<'t> {
         Ok(Stmt::Print(value))
     }
 
-    fn expect(&mut self, token_type: TokenType, msg: &str) -> Result<()> {
+    // block  → '{' declaration * '}'
+    fn block(&mut self) -> Result<Stmt<'t>> {
+        let mut block = Vec::new();
+        loop {
+            if let TokenType::RightBrace = self.peek_type()? {
+                self.advance();
+                return Ok(Stmt::Block(block));
+            }
+            let stmt = self.declaration()?;
+            block.push(stmt);
+        }
+    }
+
+    fn expect(&mut self, token_type: TokenType, msg: &str) -> Result<Token<'t>> {
         if self.peek_type()? == token_type {
-            self.advance();
-            Ok(())
+            let tok = self.advance();
+            Ok(tok)
         } else {
             Err(msg.into())
         }
@@ -262,9 +287,8 @@ impl<'t> Parser<'t> {
 #[cfg(test)]
 mod tests {
     use super::Parser;
-    use super::ast::*;
-    
-    use value::Value;
+    use super::ast::{UnaryOperator,BinaryOperator,Stmt,Expr};
+    use super::ast::dsl::*;
 
     #[test]
     fn expression() {
@@ -277,17 +301,66 @@ mod tests {
         let mut parser = Parser::new(prog);
         let statements = parser.parse().unwrap();
         assert_eq!(vec![
-            Stmt::Expr(Expr::Literal(Value::Number(1.0))),
-            Stmt::Expr(Expr::Literal(Value::String("foobar".into()))),
-            Stmt::Print(Expr::binary(
+            Stmt::Expr(number(1.0)),
+            Stmt::Expr(string("foobar")),
+            Stmt::Print(binary(
                 BinaryOperator::Star,
-                Expr::Grouping(Box::new(Expr::binary(
+                grouping(binary(
                     BinaryOperator::Plus,
-                    Expr::Literal(Value::Number(1.0)),
-                    Expr::Literal(Value::Number(2.0)),
-                ))),
-                Expr::unary(UnaryOperator::Minus, Expr::Literal(Value::Number(3.0))),
+                    number(1.0),
+                    number(2.0),
+                )),
+                unary(UnaryOperator::Minus, number(3.0)),
             )),
+        ], statements);
+    }
+
+    #[test]
+    fn declaration() {
+        let prog = r#"
+        var a;
+        var b = 1 + 1;
+        "#;
+
+        let mut parser = Parser::new(prog);
+        let statements = parser.parse().unwrap();
+        assert_eq!(vec![
+            Stmt::Var("a", nil()),
+            Stmt::Var("b", binary(BinaryOperator::Plus, number(1.0), number(1.0)))
+        ], statements);
+    }
+
+    #[test]
+    fn block() {
+        let prog = r#"
+        {
+            var a = 1;
+            print a;
+        }
+        "#;
+
+        let mut parser = Parser::new(prog);
+        let statements = parser.parse().unwrap();
+        assert_eq!(vec![
+            Stmt::Block(vec![
+                Stmt::Var("a", number(1.0)),
+                Stmt::Print(Expr::Var("a")),
+            ])
+        ], statements);
+    }
+
+    #[test]
+    fn synchronize() {
+        let prog = r#"
+        var a;
+        var b = 1 + 1;
+        "#;
+
+        let mut parser = Parser::new(prog);
+        let statements = parser.parse().unwrap();
+        assert_eq!(vec![
+            Stmt::Var("a", nil()),
+            Stmt::Var("b", binary(BinaryOperator::Plus, number(1.0), number(1.0)))
         ], statements);
     }
 
@@ -301,10 +374,10 @@ mod tests {
         let mut parser = Parser::new(prog);
         let statements = parser.parse().unwrap();
         assert_eq!(vec![
-            Stmt::Expr(Expr::binary(
+            Stmt::Expr(binary(
                 BinaryOperator::Plus,
-                Expr::Literal(Value::Number(1.0)),
-                Expr::Literal(Value::Number(1.0)),
+                number(1.0),
+                number(1.0),
             )),
         ], statements);
     }
