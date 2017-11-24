@@ -80,6 +80,11 @@ impl<'t> Eval for Stmt<'t> {
                     else_clause.eval(context)?;
                 }
             },
+			Stmt::While(ref cond, ref body) => {
+				while cond.eval(context)?.into() {
+					body.eval(context)?;
+				}
+			}
         }
         Ok(Value::Void)
     }
@@ -100,7 +105,16 @@ impl<'t> Eval for Expr<'t> {
                         return Ok((*v).clone())
                     }
                 }
-            }
+            },
+            Expr::Assign(var, ref lhs) => {
+                let lhs = lhs.eval(context)?;
+                let env = context.env_mut();
+                if env.rebind(var, lhs.clone()) {
+                    Ok(lhs)
+                } else {
+                    Err(ErrorKind::UndefinedVariable(var.into()).into())
+                }
+            },
         }
     }
 }
@@ -124,16 +138,17 @@ macro_rules! numeric_binary_op (
     );
 );
 
-macro_rules! bool_binary_op (
+macro_rules! comparison_op (
     ($op:tt, $lhs:ident, $rhs:ident) => (
-        {
-            let lhsb: bool = $lhs.into();
-            let rhsb: bool = $rhs.into();
-            if lhsb $op rhsb {
-                Ok(Value::True)
-            } else {
-                Ok(Value::False)
-            }
+        match ($lhs, $rhs) {
+            (Value::Number(nlhs), Value::Number(nrhs)) => {
+				if nlhs $op nrhs {
+					Ok(Value::True)
+				} else {
+					Ok(Value::False)
+				}
+            },
+            _ => Err("Invalid operands, expected number".into()),
         }
     );
 );
@@ -156,9 +171,11 @@ impl<'t> Eval for Binary<'t> {
             BinaryOperator::Minus => numeric_binary_op!(-, lhs, rhs),
             BinaryOperator::Star => numeric_binary_op!(*, lhs, rhs),
             BinaryOperator::Slash => numeric_binary_op!(/, lhs, rhs),
-            BinaryOperator::Equal => bool_binary_op!(==, lhs, rhs),
-            BinaryOperator::BangEq => bool_binary_op!(!=, lhs, rhs),
-            _ => unimplemented!(">, >=, <, <="),
+            BinaryOperator::GreaterThan => comparison_op!(>, lhs, rhs),
+            BinaryOperator::GreaterThanEq => comparison_op!(>=, lhs, rhs),
+            BinaryOperator::LessThan => comparison_op!(<, lhs, rhs),
+            BinaryOperator::LessThanEq => comparison_op!(<=, lhs, rhs),
+            _ => unimplemented!("==, !="),
         }
     }
 }

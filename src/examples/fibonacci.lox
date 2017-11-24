@@ -1,0 +1,11 @@
+var a = 1;
+var b = 1;
+var n = 10;
+
+while (n > 0) {
+    print a;
+    var tmp = a;
+    a = b;
+    b = tmp + b;
+    n = n - 1;
+}

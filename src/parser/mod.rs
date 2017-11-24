@@ -103,10 +103,15 @@ impl<'t> Parser<'t> {
     }
 
     // statement  → exprStmt
+    //            | ifStmt
     //            | printStmt
     //            | block ;
     fn statement(&mut self) -> Result<Stmt<'t>> {
         match self.peek_type()? {
+            TokenType::Keyword(Keyword::While) => {
+                self.advance();
+                self.while_statement()
+            },
             TokenType::Keyword(Keyword::Print) => {
                 self.advance();
                 self.print_statement()
@@ -143,6 +148,14 @@ impl<'t> Parser<'t> {
         }
     }
 
+    fn while_statement(&mut self) -> Result<Stmt<'t>> {
+        self.expect(TokenType::LeftParen, "Expected '(' after while")?;
+        let cond = self.expression()?;
+        self.expect(TokenType::RightParen, "Expected ')' after while condition")?;
+        let body = self.declaration()?;
+		Ok(Stmt::While(cond, Box::new(body)))
+    }
+
     // block  → '{' declaration * '}'
     fn block(&mut self) -> Result<Stmt<'t>> {
         let mut block = Vec::new();
@@ -173,7 +186,20 @@ impl<'t> Parser<'t> {
 
     // expression → equality
     pub fn expression(&mut self) -> Result<Expr<'t>> {
-        self.equality()
+        self.assignment()
+    }
+
+    fn assignment(&mut self) -> Result<Expr<'t>> {
+        let expr = self.equality()?;
+        if let TokenType::Equal = self.peek_type()? {
+            self.advance();
+            let value = self.assignment()?;
+            if let Expr::Var(name) = expr {
+                return Ok(Expr::Assign(name, Box::new(value)));
+            }
+            return Err("Invalid assignment target".into());
+        }
+        Ok(expr)
     }
 
     // equality   → comparison ( ( "!=" | "==" ) comparison )*
@@ -335,13 +361,15 @@ mod tests {
         let prog = r#"
         var a;
         var b = 1 + 1;
+        a = 1;
         "#;
 
         let mut parser = Parser::new(prog);
         let statements = parser.parse().unwrap();
         assert_eq!(vec![
             Stmt::Var("a", nil()),
-            Stmt::Var("b", binary(BinaryOperator::Plus, number(1.0), number(1.0)))
+            Stmt::Var("b", binary(BinaryOperator::Plus, number(1.0), number(1.0))),
+            Stmt::Expr(Expr::Assign("a", Box::new(number(1.0))))
         ], statements);
     }
 
@@ -413,6 +441,26 @@ mod tests {
                 truelit(),
                 Stmt::Print(string("this")),
                 Stmt::Print(string("that"))
+            )
+        ], statements);
+    }
+
+    #[test]
+    fn parse_while_loop() {
+        let prog = r#"
+        while (a > 1) {
+            print "body";
+        }
+        "#;
+
+        let mut parser = Parser::new(prog);
+        let statements = parser.parse().unwrap();
+        assert_eq!(vec![
+            Stmt::While(
+                binary(BinaryOperator::GreaterThan, var("a"), number(1.0)),
+                Box::new(Stmt::Block(vec![
+                    Stmt::Print(string("body"))
+                ]))
             )
         ], statements);
     }

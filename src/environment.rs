@@ -73,6 +73,26 @@ impl Environment {
         inner.map.insert(key.into(), Rc::new(value));
     }
 
+    pub fn rebind(&mut self, key: &str, value: Value) -> bool {
+        let mut node = Some(self.node.clone());
+
+        loop {
+            let mut next = None;
+            if let Some(ref n) = node {
+                let mut bn = n.borrow_mut();
+                if bn.map.contains_key(key) {
+                    bn.map.insert(key.into(), Rc::new(value));
+                    return true;
+                }
+                next = bn.parent()
+            }
+            if next.is_none() {
+                return false;
+            }
+            node = next;
+        }
+    }
+
     pub fn extend(&self) -> Self {
         let node = Rc::new(RefCell::new(
             EnvNode::with_parent(self.node.clone())

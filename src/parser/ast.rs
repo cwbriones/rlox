@@ -38,6 +38,10 @@ pub mod dsl {
     pub fn grouping<'t>(expr: Expr<'t>) -> Expr<'t> {
         Expr::Grouping(Box::new(expr))
     }
+
+    pub fn var<'t>(name: &'t str) -> Expr<'t> {
+        Expr::Var(name)
+    }
 }
 
 #[derive(PartialEq, Debug)]
@@ -47,6 +51,7 @@ pub enum Stmt<'t> {
     Var(&'t str, Expr<'t>),
     Block(Vec<Stmt<'t>>),
     If(Expr<'t>, Box<Stmt<'t>>, Option<Box<Stmt<'t>>>),
+    While(Expr<'t>, Box<Stmt<'t>>),
 }
 
 impl<'t> Stmt<'t> {
@@ -66,6 +71,7 @@ pub enum Expr<'t> {
     Literal(Value),
     Unary(Unary<'t>),
     Var(&'t str),
+    Assign(&'t str, Box<Expr<'t>>),
 }
 
 impl<'t> Expr<'t> {
@@ -165,6 +171,9 @@ impl PrettyPrinter {
             },
             Expr::Var(ref var) => {
                 write!(&mut self.buf, "{:indent$}Var({:?})\n", "", var, indent=indent)
+            },
+            Expr::Assign(var, ref expr) => {
+                write!(&mut self.buf, "{:indent$}Assign({:?})\n", "", var, indent=indent)
             }
         }
     }
