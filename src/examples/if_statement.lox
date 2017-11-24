@@ -1,0 +1,19 @@
+if (true) print "True";
+if (nil) print "False";
+
+if (true) {
+    print "this";
+} else {
+    print "that";
+}
+
+if (false) {
+    print "this";
+} else {
+    print "that";
+}
+
+// From the ambiguous example
+if (true) if (false) print "whenTrue"; else print "whenFalse";
+// Prints nothing
+if (false) if (true) print "whenTrue"; else print "whenFalse";

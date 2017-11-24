@@ -73,10 +73,7 @@ impl<'t> Parser<'t> {
             // TODO: This should return the errors encountered line by line
             // in one pass
             match self.declaration() {
-                Ok(stmt) => {
-                    println!("parse {:?}", stmt);
-                    statements.push(stmt);
-                },
+                Ok(stmt) => statements.push(stmt),
                 Err(_)   => self.synchronize(),
             }
         }
@@ -114,6 +111,10 @@ impl<'t> Parser<'t> {
                 self.advance();
                 self.print_statement()
             },
+            TokenType::Keyword(Keyword::If) => {
+                self.advance();
+                self.if_statement()
+            },
             TokenType::LeftBrace => {
                 self.advance();
                 self.block()
@@ -126,6 +127,20 @@ impl<'t> Parser<'t> {
         let value = self.expression()?;
         self.expect(TokenType::Semicolon, "Expected ';' after value")?;
         Ok(Stmt::Print(value))
+    }
+
+    fn if_statement(&mut self) -> Result<Stmt<'t>> {
+        self.expect(TokenType::LeftParen, "Expected '(' after if")?;
+        let cond = self.expression()?;
+        self.expect(TokenType::RightParen, "Expected ')' after if condition")?;
+        let then_clause = self.declaration()?;
+        if let TokenType::Keyword(Keyword::Else) = self.peek_type()? {
+            self.advance();
+            let else_clause = self.declaration()?;
+            Ok(Stmt::if_else_stmt(cond, then_clause, else_clause))
+        } else {
+            Ok(Stmt::if_stmt(cond, then_clause))
+        }
     }
 
     // block  → '{' declaration * '}'
@@ -379,6 +394,26 @@ mod tests {
                 number(1.0),
                 number(1.0),
             )),
+        ], statements);
+    }
+
+    #[test]
+    fn parse_if_statement() {
+        let prog = r#"
+        if (true)
+            print "this";
+        else
+            print "that";
+        "#;
+
+        let mut parser = Parser::new(prog);
+        let statements = parser.parse().unwrap();
+        assert_eq!(vec![
+            Stmt::if_else_stmt(
+                truelit(),
+                Stmt::Print(string("this")),
+                Stmt::Print(string("that"))
+            )
         ], statements);
     }
 }

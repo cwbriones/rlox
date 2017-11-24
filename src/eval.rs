@@ -72,6 +72,14 @@ impl<'t> Eval for Stmt<'t> {
                 }
                 context.pop_env();
             },
+            Stmt::If(ref cond, ref then_clause, ref else_clause) => {
+                let cond: bool = cond.eval(context)?.into();
+                if cond {
+                    then_clause.eval(context)?;
+                } else if let &Some(ref else_clause) = else_clause {
+                    else_clause.eval(context)?;
+                }
+            },
         }
         Ok(Value::Void)
     }

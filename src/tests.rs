@@ -61,5 +61,6 @@ macro_rules! define_test (
     );
 );
 
-define_test!(variables_and_scope);
 define_test!(arithmetic);
+define_test!(variables_and_scope);
+define_test!(if_statement);

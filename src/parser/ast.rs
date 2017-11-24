@@ -23,10 +23,10 @@ pub mod dsl {
         Expr::Literal(Value::Nil)
     }
 
-    // pub fn truelit<'t>() -> Expr<'t> {
-    //     Expr::Literal(Value::True)
-    // }
-    //
+    pub fn truelit<'t>() -> Expr<'t> {
+        Expr::Literal(Value::True)
+    }
+
     // pub fn falselit<'t>() -> Expr<'t> {
     //     Expr::Literal(Value::False)
     // }
@@ -46,6 +46,17 @@ pub enum Stmt<'t> {
     Print(Expr<'t>),
     Var(&'t str, Expr<'t>),
     Block(Vec<Stmt<'t>>),
+    If(Expr<'t>, Box<Stmt<'t>>, Option<Box<Stmt<'t>>>),
+}
+
+impl<'t> Stmt<'t> {
+    pub(super) fn if_stmt(cond: Expr<'t>, then_clause: Stmt<'t>) -> Self {
+        Stmt::If(cond, Box::new(then_clause), None)
+    }
+
+    pub(super) fn if_else_stmt(cond: Expr<'t>, then_clause: Stmt<'t>, else_clause: Stmt<'t>) -> Self {
+        Stmt::If(cond, Box::new(then_clause), Some(Box::new(else_clause)))
+    }
 }
 
 #[derive(PartialEq)]
