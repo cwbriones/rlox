@@ -65,4 +65,5 @@ define_test!(arithmetic);
 define_test!(variables_and_scope);
 define_test!(if_statement);
 define_test!(while_loop);
+define_test!(for_loop);
 define_test!(fibonacci);

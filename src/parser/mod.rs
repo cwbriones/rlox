@@ -120,6 +120,10 @@ impl<'t> Parser<'t> {
                 self.advance();
                 self.if_statement()
             },
+            TokenType::Keyword(Keyword::For) => {
+                self.advance();
+                self.for_statement()
+            },
             TokenType::LeftBrace => {
                 self.advance();
                 self.block()
@@ -152,8 +156,51 @@ impl<'t> Parser<'t> {
         self.expect(TokenType::LeftParen, "Expected '(' after while")?;
         let cond = self.expression()?;
         self.expect(TokenType::RightParen, "Expected ')' after while condition")?;
-        let body = self.declaration()?;
+        let body = self.statement()?;
 		Ok(Stmt::While(cond, Box::new(body)))
+    }
+
+    fn for_statement(&mut self) -> Result<Stmt<'t>> {
+        self.expect(TokenType::LeftParen, "Expected '(' after for")?;
+        let init = match self.peek_type()? {
+            TokenType::Semicolon => {
+                self.advance();
+                None
+            },
+            TokenType::Keyword(Keyword::Var) => {
+                self.advance();
+                Some(self.var_decl()?)
+            },
+            _ => Some(self.expression_statement()?),
+        };
+
+        let condition = match self.peek_type()? {
+            TokenType::Semicolon => Expr::Literal(Value::True),
+            _ => self.expression()?,
+        };
+        self.expect(TokenType::Semicolon, "Expect ';' after loop condition.")?;
+
+        let increment = match self.peek_type()? {
+            TokenType::RightParen => None,
+            _ => Some(self.expression()?),
+        };
+        self.expect(TokenType::RightParen, "Expect ')' after for clauses.")?;
+
+        let mut body = self.statement()?;
+
+        // Desugar into while loop
+        body = match increment {
+            Some(increment) => {
+                Stmt::Block(vec![body, Stmt::Expr(increment)])
+            },
+            None => body,
+        };
+
+        let while_loop = Stmt::While(condition, Box::new(body));
+        match init {
+            Some(init) => Ok(Stmt::Block(vec![init, while_loop])),
+            None => Ok(while_loop),
+        }
     }
 
     // block  → '{' declaration * '}'
