@@ -1,7 +1,7 @@
 use environment::Environment;
 use errors::*;
-use parser::ast::{Expr,Stmt,Binary,Unary};
-use parser::{Parser,TokenType};
+use parser::Parser;
+use parser::ast::{Expr,Stmt,Binary,Unary,UnaryOperator,BinaryOperator};
 use value::Value;
 
 pub trait Context {
@@ -48,10 +48,10 @@ impl<'t> Eval for Stmt<'t> {
                 let evald = inner.eval(context)?;
                 context.println(&evald);
             },
-            Stmt::Var(ref tok, ref expr) => {
+            Stmt::Var(ref var, ref expr) => {
                 let val = expr.eval(context)?;
-                debug!("Set var '{}' to value {}", tok.value, val);
-                context.env_mut().bind(tok.value, val);
+                debug!("Set var '{}' to value {}", var, val);
+                context.env_mut().bind(var, val);
             }
         }
         Ok(Value::Void)
@@ -65,8 +65,7 @@ impl<'t> Eval for Expr<'t> {
             Expr::Binary(ref inner) => inner.eval(context),
             Expr::Unary(ref inner) => inner.eval(context),
             Expr::Literal(ref inner) => inner.eval(context),
-            Expr::Var(ref token) => {
-                let var = token.value;
+            Expr::Var(ref var) => {
                 let env = context.env();
                 match env.lookup(var) {
                     None => return Err("Could not find var".into()),
@@ -98,14 +97,28 @@ macro_rules! numeric_binary_op (
     );
 );
 
+macro_rules! bool_binary_op (
+    ($op:tt, $lhs:ident, $rhs:ident) => (
+        {
+            let lhsb: bool = $lhs.into();
+            let rhsb: bool = $rhs.into();
+            if lhsb $op rhsb {
+                Ok(Value::True)
+            } else {
+                Ok(Value::False)
+            }
+        }
+    );
+);
+
 impl<'t> Eval for Binary<'t> {
     fn eval(&self, context: &mut Context) -> Result<Value> {
         let lhs = self.lhs.eval(context)?;
         let rhs = self.rhs.eval(context)?;
-        let op = &self.operator.ty;
+        let op = &self.operator;
 
         match *op {
-            TokenType::Plus => match (lhs, rhs) {
+            BinaryOperator::Plus => match (lhs, rhs) {
                 (Value::String(lhs), Value::String(rhs)) => {
                     let mut res = lhs.clone();
                     res.push_str(&rhs);
@@ -113,9 +126,11 @@ impl<'t> Eval for Binary<'t> {
                 },
                 (lhs, rhs) => numeric_binary_op!(+, lhs, rhs)
             },
-            TokenType::Minus => numeric_binary_op!(-, lhs, rhs),
-            TokenType::Star => numeric_binary_op!(*, lhs, rhs),
-            TokenType::Slash => numeric_binary_op!(/, lhs, rhs),
+            BinaryOperator::Minus => numeric_binary_op!(-, lhs, rhs),
+            BinaryOperator::Star => numeric_binary_op!(*, lhs, rhs),
+            BinaryOperator::Slash => numeric_binary_op!(/, lhs, rhs),
+            BinaryOperator::Equal => bool_binary_op!(==, lhs, rhs),
+            BinaryOperator::BangEq => bool_binary_op!(!=, lhs, rhs),
             _ => unreachable!(),
         }
     }
@@ -124,8 +139,8 @@ impl<'t> Eval for Binary<'t> {
 impl<'t> Eval for Unary<'t> {
     fn eval(&self, context: &mut Context) -> Result<Value> {
         let operand = self.unary.eval(context)?;
-        match self.operator.ty {
-            TokenType::Minus => {
+        match self.operator {
+            UnaryOperator::Minus => {
                 match operand {
                     Value::Number(n) => {
                         Ok(Value::Number(-1.0 * n))
@@ -135,7 +150,7 @@ impl<'t> Eval for Unary<'t> {
                     }
                 }
             },
-            TokenType::Bang => {
+            UnaryOperator::Bang => {
                 if operand.into() {
                     Ok(Value::False)
                 } else {

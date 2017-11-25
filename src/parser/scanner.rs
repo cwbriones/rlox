@@ -1,26 +1,27 @@
 use std::str::CharIndices;
 use std::iter::Peekable;
+use super::ast::{BinaryOperator, UnaryOperator};
 
 use errors::*;
 
 use std::str;
 
 #[derive(Debug, Clone, Copy)]
-pub struct Token<'a> {
+pub(super) struct Token<'a> {
     pub ty: TokenType<'a>,
     pub value: &'a str,
     pub position: Position,
 }
 
 #[derive(PartialEq, Debug, Clone, Copy)]
-pub struct Position {
+pub(super) struct Position {
     pub start: usize,
     pub end: usize,
     pub line: usize,
 }
 
 #[derive(PartialEq, Debug, Clone, Copy)]
-pub enum TokenType<'s> {
+pub(super) enum TokenType<'s> {
     LeftParen,
     RightParen,
     LeftBrace,
@@ -45,6 +46,32 @@ pub enum TokenType<'s> {
     Number(f64),
     Identifier,
     Keyword(Keyword),
+}
+
+impl<'s> TokenType<'s> {
+    pub(super) fn into_unary(&self) -> Option<UnaryOperator> {
+        match *self {
+            TokenType::Bang => Some(UnaryOperator::Bang),
+            TokenType::Minus => Some(UnaryOperator::Minus),
+            _ => None,
+        }
+    }
+
+    pub(super) fn into_binary(&self) -> Option<BinaryOperator> {
+        match *self {
+            TokenType::Equal => Some(BinaryOperator::Equal),
+            TokenType::BangEq => Some(BinaryOperator::BangEq),
+            TokenType::GreaterThan => Some(BinaryOperator::GreaterThan),
+            TokenType::GreaterThanEq => Some(BinaryOperator::GreaterThanEq),
+            TokenType::LessThan => Some(BinaryOperator::LessThan),
+            TokenType::LessThanEq => Some(BinaryOperator::LessThanEq),
+            TokenType::Minus => Some(BinaryOperator::Minus),
+            TokenType::Plus => Some(BinaryOperator::Plus),
+            TokenType::Slash => Some(BinaryOperator::Slash),
+            TokenType::Star => Some(BinaryOperator::Star),
+            _ => None
+        }
+    }
 }
 
 #[derive(PartialEq, Eq, Debug, Clone, Copy)]
@@ -93,7 +120,7 @@ impl str::FromStr for Keyword {
     }
 }
 
-pub struct Scanner<'a> {
+pub(super) struct Scanner<'a> {
     source: &'a str,
     iter: Peekable<CharIndices<'a>>,
     current: usize,

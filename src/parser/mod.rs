@@ -25,8 +25,8 @@ use value::Value;
 use self::scanner::Scanner;
 use self::ast::{Expr, Stmt, Unary, Binary};
 
-pub use self::scanner::Token;
-pub use self::scanner::TokenType;
+use self::scanner::Token;
+use self::scanner::TokenType;
 pub use self::scanner::Keyword;
 
 pub mod ast;
@@ -44,14 +44,13 @@ macro_rules! binary_expr_impl (
         fn $name(&mut self) -> Result<Expr<'t>> {
             let mut expr = self.$inner()?;
             while let Ok(Token{ref ty, ..}) = self.peek() {
-                let operator = match *ty {
+                let tok = match *ty {
                     $($pattern)|* => { self.advance() },
                     _ => break,
                 };
                 let rhs = self.$inner()?;
-                let binary = Binary::new(expr, rhs, operator);
-
-                expr = Expr::Binary(binary);
+                let operator = tok.ty.into_binary().unwrap();
+                expr = Expr::binary(expr, rhs, operator);
             }
             Ok(expr)
         }
@@ -71,10 +70,8 @@ impl<'t> Parser<'t> {
     pub fn parse(&mut self) -> Result<Vec<Stmt<'t>>> {
         let mut statements = Vec::new();
         while self.has_next() {
-            match self.declaration() {
-                Ok(stmt) => statements.push(stmt),
-                Err(_)   => self.synchronize(),
-            }
+            let stmt = self.statement()?;
+            statements.push(stmt);
         }
         Ok(statements)
     }
@@ -98,7 +95,7 @@ impl<'t> Parser<'t> {
             initializer = self.expression()?;
         }
         self.expect(TokenType::Semicolon, "Expected semicolon after variable declaration")?;
-        Ok(Stmt::Var(ident, initializer))
+        Ok(Stmt::Var(ident.value, initializer))
     }
 
     // statement  → exprStmt
@@ -157,13 +154,11 @@ impl<'t> Parser<'t> {
     fn unary(&mut self) -> Result<Expr<'t>> {
         match self.peek_type()? {
             TokenType::Bang | TokenType::Minus => {
-                let operator = self.advance();
+                let tok = self.advance();
+                let operator = tok.ty.into_unary().unwrap();
                 let unary = self.unary()?;
 
-                Ok(Expr::Unary(Unary {
-                    operator: operator,
-                    unary: Box::new(unary),
-                }))
+                Ok(Expr::unary(unary, operator))
             }
             _ => self.primary()
         }
@@ -208,7 +203,7 @@ impl<'t> Parser<'t> {
             },
             TokenType::Identifier => {
                 let token = self.advance();
-                Ok(Expr::Var(token))
+                Ok(Expr::Var(token.value))
             },
             _ => Err("Expected a literal or parenthesized expression".into())
         }
@@ -269,35 +264,17 @@ mod tests {
     use super::Parser;
 
     #[test]
-    fn parse_declaration() {
+    fn expression() {
         let prog = r#"
-        var a;
-        var b = 2;
+        1;
+        "foobar";
+        print (1 + 2) * -3;
         "#;
 
         let mut parser = Parser::new(prog);
         let statements = parser.parse().unwrap();
-    }
-
-    fn parse_print_expression() {
-        let prog = r#"
-        print 1;
-        print "foo";
-        "#;
-
-        let mut parser = Parser::new(prog);
-        let statements = parser.parse().unwrap();
-    }
-
-    #[test]
-    fn parse_arithmetic_expressions() {
-        let prog = r#"
-        1 * (2 + 3) / 4 + 5 - 6;
-        1.0 + 2 - 3.1415;
-        "#;
-
-        let mut parser = Parser::new(prog);
-        let statements = parser.parse().unwrap();
+        let s = format!("{:?}", statements);
+        println!("{}", s);
     }
 
     #[test]
@@ -309,5 +286,21 @@ mod tests {
 
         let mut parser = Parser::new(prog);
         let statements = parser.parse().unwrap();
+        let s = format!("{:?}", statements);
+        assert_eq!("", s);
     }
+
+    // #[test]
+    // fn parse_declaration() {
+    //     let prog = r#"
+    //     var a;
+    //     var b = 2;
+    //     "#;
+    //
+    //     let mut parser = Parser::new(prog);
+    //     let statements = parser.parse().unwrap();
+    //     let s = format!("{:?}", statements);
+    //     println!("{}", s);
+    // }
+
 }
