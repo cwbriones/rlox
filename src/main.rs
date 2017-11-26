@@ -11,20 +11,19 @@ extern crate log;
 use std::env;
 use std::io::prelude::*;
 use std::fs::File;
-use std::error::Error;
-
-use rustyline::error::ReadlineError;
 
 use eval::Eval;
 use eval::StandardContext;
-use value::Value;
 use errors::Result;
+use parser::Parser;
+use repl::Repl;
 
 mod errors;
 mod environment;
 mod parser;
 mod eval;
 mod value;
+mod repl;
 
 #[cfg(test)]
 mod tests;
@@ -50,45 +49,17 @@ fn main() {
             }
         }
     }
-    repl();
-}
-
-fn repl() {
-    let mut rl = rustyline::Editor::<()>::new();
-    let mut context = StandardContext::new();
-
-    println!("Welcome to lox! Use Ctrl-C to exit.");
-    loop {
-        let readline = rl.readline("rlox> ");
-        match readline {
-            Ok(line) => {
-                rl.add_history_entry(&line);
-                match line.eval(&mut context) {
-                    Ok(Value::Void) => {},
-                    Ok(lit) => println!("{}", lit),
-                    Err(err) => eprintln!("[error]: {}", err.description()),
-                }
-            },
-            Err(ReadlineError::Interrupted) => {
-                break
-            },
-            Err(ReadlineError::Eof) => {
-                break
-            },
-            Err(err) => {
-                error!("{:?}", err);
-            }
-        }
-    }
-    println!("Goodbye!");
+    Repl::new().run();
 }
 
 fn run_file(filename: &str) -> Result<()> {
     let mut file = File::open(filename)?;
     let mut contents = String::new();
     file.read_to_string(&mut contents)?;
-
     let mut context = StandardContext::new();
-    contents.eval(&mut context)?;
+    let mut parser = Parser::new(&contents);
+    parser.parse().and_then(|stmts| {
+        stmts.as_slice().eval(&mut context)
+    })?;
     Ok(())
 }

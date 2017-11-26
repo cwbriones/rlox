@@ -29,7 +29,7 @@ error_chain! {
 
         UndefinedVariable(s: String) {
             description("undefined variable")
-            display("Symbol '{}' could not be resolved", s)
+            display("Variable '{}' could not be resolved", s)
         }
 
         ParserError(errors: Vec<Error>) {
