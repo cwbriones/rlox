@@ -43,8 +43,8 @@ macro_rules! binary_expr_impl (
     ($name:ident, $inner:ident, $($pattern:pat)|*) => (
         fn $name(&mut self) -> Result<Expr<'t>> {
             let mut expr = self.$inner()?;
-            while let Ok(Token{ref ty, ..}) = self.peek() {
-                let tok = match *ty {
+            while let Ok(ty) = self.peek_type() {
+                let tok = match ty {
                     $($pattern)|* => { self.advance() },
                     _ => break,
                 };
@@ -69,15 +69,28 @@ impl<'t> Parser<'t> {
     // program → declaration* eof ;
     pub fn parse(&mut self) -> Result<Vec<Stmt<'t>>> {
         let mut statements = Vec::new();
+        let mut errors = Vec::new();
         while self.has_next() {
-            // TODO: This should return the errors encountered line by line
-            // in one pass
-            match self.declaration() {
+            match self.parse_statement() {
                 Ok(stmt) => statements.push(stmt),
-                Err(_)   => self.synchronize(),
+                Err(err) => errors.push(err),
             }
         }
-        Ok(statements)
+        if !errors.is_empty() {
+            Err(ErrorKind::ParserError(errors).into())
+        } else {
+            Ok(statements)
+        }
+    }
+
+    pub fn parse_statement(&mut self) -> Result<Stmt<'t>> {
+        match self.declaration() {
+            Ok(stmt) => Ok(stmt),
+            Err(err) => {
+                self.synchronize();
+                Err(err)
+            }
+        }
     }
 
     // declaration → varDecl
@@ -355,20 +368,19 @@ impl<'t> Parser<'t> {
     }
 
     fn has_next(&mut self) -> bool {
-        self.scanner.peek().is_some()
-    }
-
-    fn peek(&mut self) -> Result<Token<'t>> {
-        match self.scanner.peek() {
-            Some(&Ok(tok)) => Ok(tok),
-            // FIXME: Pass up the error
-            Some(&Err(_)) => Err("There was a scanning error".into()),
-            None => Err(ErrorKind::UnexpectedEOF.into()),
+        match self.peek_type() {
+            Ok(ty) => ty != TokenType::EOF,
+            Err(_) => true,
         }
     }
 
     fn peek_type(&mut self) -> Result<TokenType<'t>> {
-        self.peek().map(|t| t.ty)
+        match self.scanner.peek() {
+            Some(&Ok(tok)) => Ok(tok.ty),
+            // FIXME: Pass up the error
+            Some(&Err(_)) => Err("There was a scanning error".into()),
+            None => Ok(TokenType::EOF),
+        }
     }
 }
 
@@ -380,6 +392,14 @@ mod tests {
 
     #[test]
     fn expression() {
+        let mut parser = Parser::new("1 + -1 * (1 + 1)");
+        let expr = parser.expression().unwrap();
+        // assert_eq!(
+        // , expr);
+    }
+
+    #[test]
+    fn expression_statement() {
         let prog = r#"
         1;
         "foobar";

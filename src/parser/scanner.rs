@@ -46,6 +46,7 @@ pub(super) enum TokenType<'s> {
     Number(f64),
     Identifier,
     Keyword(Keyword),
+    EOF,
 }
 
 impl<'s> TokenType<'s> {
@@ -125,6 +126,7 @@ pub(super) struct Scanner<'a> {
     iter: Peekable<CharIndices<'a>>,
     current: usize,
     line: usize,
+    at_eof: bool,
 }
 
 impl<'a> Scanner<'a> {
@@ -134,6 +136,7 @@ impl<'a> Scanner<'a> {
             iter: source.char_indices().peekable(),
             current: 0,
             line: 1,
+            at_eof: false,
         }
     }
 
@@ -162,11 +165,19 @@ impl<'a> Scanner<'a> {
         });
     }
 
+    pub fn eof(&mut self) -> Token<'a> {
+        self.yield_token(self.source.len(), TokenType::EOF)
+    }
+
     fn scan_token(&mut self) -> Option<Result<Token<'a>>> {
         self.eatwhitespace();
 
         let c = self.advance();
         if c.is_none() {
+            if !self.at_eof {
+                self.at_eof = true;
+                return Some(Ok(self.eof()));
+            }
             return None
         }
         let (start, c) = c.unwrap();
@@ -242,20 +253,23 @@ impl<'a> Scanner<'a> {
             c => return Some(Err(ErrorKind::UnexpectedChar(c).into())),
         };
 
+        let token = self.yield_token(start, ty);
+        Some(Ok(token))
+    }
+
+    fn yield_token(&mut self, start: usize, ty: TokenType<'a>) -> Token<'a> {
         let token_contents = self.token_contents(start);
         let token_len = token_contents.len();
-
         let position = Position {
             start: start,
             end: start + token_len,
             line: self.line,
         };
-        let token = Token {
+        Token {
             ty: ty,
             value: token_contents,
             position: position,
-        };
-        Some(Ok(token))
+        }
     }
 
     fn advance_while<F>(&mut self, f: F) -> usize where for<'r> F: Fn(&'r char,) -> bool {
@@ -382,6 +396,7 @@ mod tests {
             TokenType::GreaterThanEq,
             TokenType::LessThan,
             TokenType::LessThanEq,
+            TokenType::EOF,
         ], &types[..]);
     }
 
@@ -394,11 +409,12 @@ mod tests {
     fn test_numbers() {
         let prog = "1 2.0 3.14159";
         let tokens = Scanner::new(prog).collect::<Result<Vec<_>>>().unwrap();
-        let types = tokens.iter().map(|t| &t.ty).collect::<Vec<_>>();
+        let types = tokens.iter().map(|t| t.ty).collect::<Vec<_>>();
         assert_eq!(&[
-            &TokenType::Number(1.0),
-            &TokenType::Number(2.0),
-            &TokenType::Number(3.14159),
+            TokenType::Number(1.0),
+            TokenType::Number(2.0),
+            TokenType::Number(3.14159),
+            TokenType::EOF,
         ], &types[..]);
 
         // Leading dot is not an error, but won't be parsed as a number
@@ -408,6 +424,7 @@ mod tests {
         assert_eq!(&[
             TokenType::Dot,
             TokenType::Number(1.0),
+            TokenType::EOF,
         ], &types[..]);
 
         // We explicitly disallow a decimal point without a fractional part

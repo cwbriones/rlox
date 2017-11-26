@@ -31,5 +31,9 @@ error_chain! {
             description("undefined variable")
             display("Symbol '{}' could not be resolved", s)
         }
+
+        ParserError(errors: Vec<Error>) {
+            description("There was an error while parsing")
+        }
     }
 }
