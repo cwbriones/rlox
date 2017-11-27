@@ -51,3 +51,5 @@ define_test!(while_loop);
 define_test!(for_loop);
 define_test!(fibonacci);
 define_test!(logical_operators);
+
+define_test!(divide_by_zero);

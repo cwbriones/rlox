@@ -122,16 +122,10 @@ macro_rules! numeric_binary_op (
     ($op:tt, $lhs:ident, $rhs:ident) => (
         match ($lhs, $rhs) {
             (Value::Number(nlhs), Value::Number(nrhs)) => {
-                return Ok(Value::Number(nlhs $op nrhs));
-            },
-            (Value::Number(_), _) => {
-                return Err("Invalid operand on lhs, expected number".into())
-            },
-            (_, Value::Number(_)) => {
-                return Err("Invalid operand on rhs, expected number".into())
+                Ok(Value::Number(nlhs $op nrhs))
             },
             _ => {
-                return Err("Invalid operands, expected number or string".into())
+                Err("Invalid operands, expected number".into())
             },
         }
     );
@@ -169,7 +163,17 @@ impl<'t> Eval for Binary<'t> {
             },
             BinaryOperator::Minus => numeric_binary_op!(-, lhs, rhs),
             BinaryOperator::Star => numeric_binary_op!(*, lhs, rhs),
-            BinaryOperator::Slash => numeric_binary_op!(/, lhs, rhs),
+            BinaryOperator::Slash => {
+                match (lhs, rhs) {
+                    (Value::Number(_), Value::Number(denom)) if denom == 0.0 => {
+                        Err(ErrorKind::DivideByZero.into())
+                    },
+                    (Value::Number(nlhs), Value::Number(nrhs)) => {
+                        Ok(Value::Number(nlhs / nrhs))
+                    },
+                    _ => Err("Invalid operands, expected numbers".into())
+                }
+            },
             BinaryOperator::GreaterThan => comparison_op!(>, lhs, rhs),
             BinaryOperator::GreaterThanEq => comparison_op!(>=, lhs, rhs),
             BinaryOperator::LessThan => comparison_op!(<, lhs, rhs),
