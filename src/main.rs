@@ -25,9 +25,6 @@ mod eval;
 mod value;
 mod repl;
 
-#[cfg(test)]
-mod tests;
-
 fn main() {
     env_logger::init().expect("Failed to initialize logger");
 
