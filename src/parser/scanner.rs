@@ -2,7 +2,7 @@ use std::str::CharIndices;
 use std::iter::Peekable;
 use super::ast::{BinaryOperator, UnaryOperator, LogicalOperator};
 
-use errors::*;
+use super::errors::*;
 
 use std::str;
 
@@ -47,6 +47,50 @@ pub(super) enum TokenType<'s> {
     Identifier,
     Keyword(Keyword),
     EOF,
+}
+
+use std::fmt::{self, Display};
+
+impl<'s> Display for TokenType<'s> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let string = match *self {
+            TokenType::LeftParen => "'('",
+            TokenType::RightParen => "')'",
+            TokenType::LeftBrace => "'{'",
+            TokenType::RightBrace => "'}'",
+            TokenType::Comma => "','",
+            TokenType::Dot => "'.'",
+            TokenType::Minus => "'-'",
+            TokenType::Plus => "'+'",
+            TokenType::Semicolon => "';'",
+            TokenType::Star => "'*'",
+            TokenType::Bang => "'!'",
+            TokenType::BangEq => "'!='",
+            TokenType::Equal => "'='",
+            TokenType::EqualEq => "'=='",
+            TokenType::LessThan => "'<'",
+            TokenType::LessThanEq => "'<='",
+            TokenType::GreaterThan => "'>'",
+            TokenType::GreaterThanEq => "'>='",
+            TokenType::Slash => "'/'",
+            TokenType::Comment => "<comment>",
+            TokenType::String(ref s) => {
+                write!(f, "{:?}", s)?;
+                return Ok(());
+            },
+            TokenType::Number(ref n) => {
+                write!(f, "number '{}'", n)?;
+                return Ok(());
+            },
+            TokenType::Identifier => "identifier",
+            TokenType::Keyword(kw) => {
+                write!(f, "keyword '{}'", kw)?;
+                return Ok(());
+            }
+            TokenType::EOF => "EOF",
+        };
+        write!(f, "{}", string)
+    }
 }
 
 impl<'s> TokenType<'s> {
@@ -101,6 +145,35 @@ pub enum Keyword {
     This,
     True,
     While,
+}
+
+impl Keyword {
+    fn as_str(&self) -> &'static str {
+        match *self {
+            Keyword::Class  => "class",
+            Keyword::Var    => "var",
+            Keyword::And    => "and",
+            Keyword::Else   => "else",
+            Keyword::False  => "false",
+            Keyword::For    => "for",
+            Keyword::Fun    => "fun",
+            Keyword::If     => "if",
+            Keyword::Nil    => "nil",
+            Keyword::Or     => "or",
+            Keyword::Print  => "print",
+            Keyword::Return => "return",
+            Keyword::Super  => "super",
+            Keyword::This   => "this",
+            Keyword::True   => "true",
+            Keyword::While  => "while",
+        }
+    }
+}
+
+impl Display for Keyword {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
 }
 
 impl str::FromStr for Keyword {
@@ -258,7 +331,7 @@ impl<'a> Scanner<'a> {
             'a'...'z' | 'A'...'Z' | '_' => {
                 self.identifier(start)
             },
-            c => return Some(Err(ErrorKind::UnexpectedChar(c).into())),
+            c => return Some(Err(SyntaxError::UnexpectedChar(c))),
         };
 
         let token = self.yield_token(start, ty);
@@ -316,7 +389,7 @@ impl<'a> Scanner<'a> {
             self.advance();
             let count = self.advance_while(|&c| '0' <= c && c <= '9');
             if count == 0 {
-                return Err(ErrorKind::UnexpectedChar('.').into());
+                return Err(SyntaxError::UnexpectedChar('.'));
             }
         };
         let num = self.token_contents(start).parse::<f64>().unwrap();
@@ -330,7 +403,7 @@ impl<'a> Scanner<'a> {
     fn string(&mut self, start: usize) -> Result<TokenType<'a>> {
         self.advance_while(|&c| c != '"');
         if self.is_at_end() {
-            return Err(ErrorKind::UnterminatedString.into());
+            return Err(SyntaxError::UnterminatedString);
         }
         // consume the "
         self.advance();
@@ -408,11 +481,6 @@ mod tests {
         ], &types[..]);
     }
 
-    // #[test]
-    // fn test_token_info() {
-    //     unimplemented!()
-    // }
-
     #[test]
     fn test_numbers() {
         let prog = "1 2.0 3.14159";
@@ -437,9 +505,9 @@ mod tests {
 
         // We explicitly disallow a decimal point without a fractional part
         let err = Scanner::new("1.").next().unwrap().unwrap_err();
-        match *err.kind() {
-            ErrorKind::UnexpectedChar('.') => (),
-            _ => panic!("Expected ErrorKind::UnexpectedChar"),
+        match err {
+            SyntaxError::UnexpectedChar('.') => (),
+            _ => panic!("Expected SyntaxError::UnexpectedChar"),
         }
     }
 
@@ -449,20 +517,12 @@ mod tests {
         assert_eq!(token.ty, TokenType::String("Hello, World"));
     }
 
-    fn test_escaped_string() {
-        let prog = r#"
-        "\"Hello, World!\"\n"
-        "#;
-        let token = Scanner::new(prog).next().unwrap().unwrap();
-        assert_eq!(token.ty, TokenType::String("\"Hello, World!\"\n"));
-    }
-
     #[test]
     fn unclosed_string() {
         let err = Scanner::new("\"Hello, World!").next().unwrap().unwrap_err();
-        match *err.kind() {
-            ErrorKind::UnterminatedString => (),
-            _ => panic!("Expected ErrorKind::UnterminatedString"),
+        match err {
+            SyntaxError::UnterminatedString => (),
+            _ => panic!("Expected SyntaxError::UnterminatedString"),
         }
     }
 }

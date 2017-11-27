@@ -63,11 +63,6 @@ impl Environment {
         }
     }
 
-    pub fn define(&mut self, key: &str) {
-        let mut inner = self.node.borrow_mut();
-        inner.map.insert(key.into(), Rc::new(Value::Nil));
-    }
-
     pub fn bind(&mut self, key: &str, value: Value) {
         let mut inner = self.node.borrow_mut();
         inner.map.insert(key.into(), Rc::new(value));
@@ -137,13 +132,5 @@ mod tests {
         assert_eq!(Some(Rc::new(Value::Number(2.0))), inner.lookup("b"));
         // neither
         assert_eq!(None, inner.lookup("d"));
-    }
-
-    #[test]
-    fn define() {
-        let mut env = Environment::new();
-        env.define("a");
-        assert!(env.lookup("a").is_some());
-        assert_eq!(Some(Rc::new(Value::Nil)), env.lookup("a"));
     }
 }

@@ -4,7 +4,8 @@ version = "0.1.0"
 authors = ["Christian Briones <cwbriones@gmail.com>"]
 
 [dependencies]
-error-chain = "*"
 rustyline = "*"
 env_logger = "*"
 log = "*"
+failure = { version = "0.1.0", features = ["backtrace"] }
+failure_derive = "0.1.0"

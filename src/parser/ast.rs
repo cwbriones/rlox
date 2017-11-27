@@ -11,9 +11,10 @@ pub mod dsl {
         Expr::binary(operator, lhs, rhs)
     }
 
-    pub fn logical<'t>(operator: LogicalOperator, lhs: Expr<'t>, rhs: Expr<'t>) -> Expr<'t> {
-        Expr::logical(operator, lhs, rhs)
-    }
+    // TODO: Write test for parsing logical operator
+    // pub fn logical<'t>(operator: LogicalOperator, lhs: Expr<'t>, rhs: Expr<'t>) -> Expr<'t> {
+    //     Expr::logical(operator, lhs, rhs)
+    // }
 
     pub fn unary<'t>(operator: UnaryOperator, unary: Expr<'t>) -> Expr<'t> {
         Expr::unary(operator, unary)
@@ -204,7 +205,7 @@ impl PrettyPrinter {
             Expr::Var(ref var) => {
                 write!(&mut self.buf, "{:indent$}Var({:?})\n", "", var, indent=indent)
             },
-            Expr::Assign(var, ref expr) => {
+            Expr::Assign(var, ref _expr) => {
                 write!(&mut self.buf, "{:indent$}Assign({:?})\n", "", var, indent=indent)
             }
         }

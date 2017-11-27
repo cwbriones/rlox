@@ -2,7 +2,7 @@ use rustyline;
 use rustyline::error::ReadlineError;
 
 use eval::{Eval, StandardContext};
-use errors;
+use failure::Error;
 use value::Value;
 use parser::Parser;
 
@@ -10,8 +10,7 @@ const PROMPT: &str = "rlox> ";
 const BLOCK_PROMPT: &str = "    > ";
 
 pub struct Repl {
-    editor: rustyline::Editor<()>,
-    context: StandardContext,
+    editor: rustyline::Editor<()>, context: StandardContext,
 }
 
 impl Repl {
@@ -33,21 +32,23 @@ impl Repl {
                     let res = self.eval(&line);
                     self.print(res);
                 },
-                Err(ReadlineError::Interrupted) => {
-                    break
-                },
-                Err(ReadlineError::Eof) => {
-                    break
-                },
-                Err(err) => {
-                    error!("{:?}", err);
-                }
+                Err(ref err) if self.should_quit(err) => break,
+                Err(err) => eprintln!("[error]: {}", err),
             }
         }
         println!("Goodbye!");
     }
 
-    fn read(&mut self) -> Result<String, ReadlineError> {
+    fn should_quit(&self, err: &Error) -> bool {
+        err.downcast_ref::<ReadlineError>().map(|err| {
+            match *err {
+                ReadlineError::Interrupted | ReadlineError::Eof => true,
+                _ => false,
+            }
+        }).unwrap_or(false)
+    }
+
+    fn read(&mut self) -> Result<String, Error> {
         let mut line = self.editor.readline(PROMPT)?;
         if line.trim_right().ends_with('{') {
             self.read_block(&mut line)?;
@@ -55,7 +56,7 @@ impl Repl {
         Ok(line)
     }
 
-    fn read_block(&mut self, line: &mut String) -> Result<(), ReadlineError> {
+    fn read_block(&mut self, line: &mut String) -> Result<(), Error> {
         let mut next = self.editor.readline(BLOCK_PROMPT)?;
         while next.trim() != "}" {
             line.push_str("\n      ");
@@ -67,17 +68,19 @@ impl Repl {
         Ok(())
     }
 
-    fn eval(&mut self, line: &str) -> errors::Result<Value> {
+    fn eval(&mut self, line: &str) -> Result<Value, Error> {
         let mut parser = Parser::new(line);
         let ctx = &mut self.context;
         if line.ends_with('}') || line.ends_with(';') {
-            parser.parse_statement().and_then(|stmt| stmt.eval(ctx))
+            let stmt = parser.parse_statement()?;
+            stmt.eval(ctx).map_err(Into::into)
         } else {
-            parser.expression().and_then(|expr| expr.eval(ctx))
+            let expr = parser.expression()?;
+            expr.eval(ctx).map_err(Into::into)
         }
     }
 
-    fn print(&self, res: errors::Result<Value>) {
+    fn print(&self, res: Result<Value, Error>) {
         match res {
             Ok(Value::Void) => {},
             Ok(lit) => println!("{}", lit),

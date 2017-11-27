@@ -1,12 +1,10 @@
-// error_chain! can recurse deeply
-#![recursion_limit = "1024"]
-
-#[macro_use]
-extern crate error_chain;
 extern crate rustyline;
 extern crate env_logger;
 #[macro_use]
 extern crate log;
+extern crate failure;
+#[macro_use]
+extern crate failure_derive;
 
 use std::env;
 use std::io::prelude::*;
@@ -14,11 +12,9 @@ use std::fs::File;
 
 use eval::Eval;
 use eval::StandardContext;
-use errors::Result;
 use parser::Parser;
 use repl::Repl;
 
-mod errors;
 mod environment;
 mod parser;
 mod eval;
@@ -42,21 +38,29 @@ fn main() {
                     eprintln!("[error]: {}", err);
                     ::std::process::exit(1);
                 }
-                ::std::process::exit(0);
             }
         }
+    } else {
+        Repl::new().run();
     }
-    Repl::new().run();
 }
 
-fn run_file(filename: &str) -> Result<()> {
+fn run_file(filename: &str) -> Result<(), failure::Error> {
     let mut file = File::open(filename)?;
     let mut contents = String::new();
     file.read_to_string(&mut contents)?;
     let mut context = StandardContext::new();
     let mut parser = Parser::new(&contents);
-    parser.parse().and_then(|stmts| {
-        stmts.as_slice().eval(&mut context)
-    })?;
+    match parser.parse() {
+        Ok(stmts) => {
+            stmts.as_slice().eval(&mut context)?;
+        },
+        Err(errors) => {
+            for err in errors {
+                eprintln!("[error]: Parse: {}", err);
+            }
+            ::std::process::exit(1);
+        }
+    }
     Ok(())
 }

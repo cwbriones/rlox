@@ -1,7 +1,18 @@
 use environment::Environment;
-use errors::*;
 use parser::ast::{Expr,Stmt,Binary,Unary,UnaryOperator,BinaryOperator,Logical,LogicalOperator};
 use value::Value;
+
+#[derive(Debug, Fail)]
+pub enum RuntimeError {
+    #[fail(display = "division by zero")]
+    DivideByZero,
+    #[fail(display = "variable '{}' could not be resolved", _0)]
+    UndefinedVariable(String),
+    #[fail(display = "invalid operands, expected {}", _0)]
+    InvalidOperands(String),
+}
+
+pub type Result<T> = ::std::result::Result<T, RuntimeError>;
 
 pub trait Context {
     fn println(&mut self, &Value);
@@ -99,7 +110,7 @@ impl<'t> Eval for Expr<'t> {
             Expr::Var(var) => {
                 let env = context.env();
                 match env.lookup(var) {
-                    None => return Err(ErrorKind::UndefinedVariable(var.into()).into()),
+                    None => return Err(RuntimeError::UndefinedVariable(var.into())),
                     Some(v) => {
                         return Ok((*v).clone())
                     }
@@ -111,7 +122,7 @@ impl<'t> Eval for Expr<'t> {
                 if env.rebind(var, lhs.clone()) {
                     Ok(lhs)
                 } else {
-                    Err(ErrorKind::UndefinedVariable(var.into()).into())
+                    Err(RuntimeError::UndefinedVariable(var.into()))
                 }
             },
         }
@@ -125,7 +136,7 @@ macro_rules! numeric_binary_op (
                 Ok(Value::Number(nlhs $op nrhs))
             },
             _ => {
-                Err("Invalid operands, expected number".into())
+                Err(RuntimeError::InvalidOperands("number".into()))
             },
         }
     );
@@ -141,7 +152,7 @@ macro_rules! comparison_op (
 					Ok(Value::False)
 				}
             },
-            _ => Err("Invalid operands, expected number".into()),
+            _ => Err(RuntimeError::InvalidOperands("number".into())),
         }
     );
 );
@@ -166,12 +177,12 @@ impl<'t> Eval for Binary<'t> {
             BinaryOperator::Slash => {
                 match (lhs, rhs) {
                     (Value::Number(_), Value::Number(denom)) if denom == 0.0 => {
-                        Err(ErrorKind::DivideByZero.into())
+                        Err(RuntimeError::DivideByZero)
                     },
                     (Value::Number(nlhs), Value::Number(nrhs)) => {
                         Ok(Value::Number(nlhs / nrhs))
                     },
-                    _ => Err("Invalid operands, expected numbers".into())
+                    _ => Err(RuntimeError::InvalidOperands("numbers".into()))
                 }
             },
             BinaryOperator::GreaterThan => comparison_op!(>, lhs, rhs),
@@ -208,9 +219,7 @@ impl<'t> Eval for Unary<'t> {
                     Value::Number(n) => {
                         Ok(Value::Number(-1.0 * n))
                     },
-                    _ => {
-                        Err("Invalid operand for operator '-', expected number".into())
-                    }
+                    _ => Err(RuntimeError::InvalidOperands("numbers".into()))
                 }
             },
             UnaryOperator::Bang => {

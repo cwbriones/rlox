@@ -23,8 +23,7 @@
 
 use std::iter::Peekable;
 
-use errors::*;
-use errors::Result;
+use self::errors::*;
 use value::Value;
 use self::scanner::Scanner;
 use self::ast::{Expr, Stmt};
@@ -34,6 +33,7 @@ use self::scanner::TokenType;
 pub use self::scanner::Keyword;
 
 pub mod ast;
+pub mod errors;
 mod scanner;
 
 pub struct Parser<'t> {
@@ -72,6 +72,18 @@ macro_rules! binary_impl (
     );
 );
 
+impl<'t> Iterator for Parser<'t> {
+    type Item = Result<Stmt<'t>>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.has_next() {
+            Some(self.parse_statement())
+        } else {
+            None
+        }
+    }
+}
+
 impl<'t> Parser<'t> {
     pub fn new(program: &'t str) -> Self {
         let scanner = Scanner::new(program);
@@ -80,23 +92,22 @@ impl<'t> Parser<'t> {
         }
     }
 
-    // program → declaration* eof ;
-    pub fn parse(&mut self) -> Result<Vec<Stmt<'t>>> {
+    pub fn parse(&mut self) -> ::std::result::Result<Vec<Stmt<'t>>, Vec<SyntaxError>> {
         let mut statements = Vec::new();
         let mut errors = Vec::new();
-        while self.has_next() {
-            match self.parse_statement() {
+        for res in self {
+            match res {
                 Ok(stmt) => statements.push(stmt),
                 Err(err) => errors.push(err),
             }
         }
         if !errors.is_empty() {
-            Err(ErrorKind::ParserError(errors).into())
-        } else {
-            Ok(statements)
+            return Err(errors);
         }
+        Ok(statements)
     }
 
+    // program → declaration* eof ;
     pub fn parse_statement(&mut self) -> Result<Stmt<'t>> {
         match self.declaration() {
             Ok(stmt) => Ok(stmt),
@@ -119,13 +130,13 @@ impl<'t> Parser<'t> {
 
     // varDecl → "var" IDENTIFIER ( "=" expression )? ";" ;
     fn var_decl(&mut self) -> Result<Stmt<'t>> {
-        let ident = self.expect(TokenType::Identifier, "Expected identifier after keyword 'var'")?;
+        let ident = self.expect(TokenType::Identifier, "keyword 'var'")?;
         let mut initializer = Expr::Literal(Value::Nil);
         if let TokenType::Equal = self.peek_type()? {
             self.advance()?;
             initializer = self.expression()?;
         }
-        self.expect(TokenType::Semicolon, "Expected semicolon after variable declaration")?;
+        self.expect(TokenType::Semicolon, "variable declaration")?;
         Ok(Stmt::Var(ident.value, initializer))
     }
 
@@ -161,14 +172,14 @@ impl<'t> Parser<'t> {
 
     fn print_statement(&mut self) -> Result<Stmt<'t>> {
         let value = self.expression()?;
-        self.expect(TokenType::Semicolon, "Expected ';' after value")?;
+        self.expect(TokenType::Semicolon, "value")?;
         Ok(Stmt::Print(value))
     }
 
     fn if_statement(&mut self) -> Result<Stmt<'t>> {
-        self.expect(TokenType::LeftParen, "Expected '(' after if")?;
+        self.expect(TokenType::LeftParen, "if")?;
         let cond = self.expression()?;
-        self.expect(TokenType::RightParen, "Expected ')' after if condition")?;
+        self.expect(TokenType::RightParen, "if condition")?;
         let then_clause = self.declaration()?;
         if let TokenType::Keyword(Keyword::Else) = self.peek_type()? {
             self.advance()?;
@@ -180,15 +191,15 @@ impl<'t> Parser<'t> {
     }
 
     fn while_statement(&mut self) -> Result<Stmt<'t>> {
-        self.expect(TokenType::LeftParen, "Expected '(' after while")?;
+        self.expect(TokenType::LeftParen, "while")?;
         let cond = self.expression()?;
-        self.expect(TokenType::RightParen, "Expected ')' after while condition")?;
+        self.expect(TokenType::RightParen, "while condition")?;
         let body = self.statement()?;
 		Ok(Stmt::While(cond, Box::new(body)))
     }
 
     fn for_statement(&mut self) -> Result<Stmt<'t>> {
-        self.expect(TokenType::LeftParen, "Expected '(' after for")?;
+        self.expect(TokenType::LeftParen, "for")?;
         let init = match self.peek_type()? {
             TokenType::Semicolon => {
                 self.advance()?;
@@ -205,13 +216,13 @@ impl<'t> Parser<'t> {
             TokenType::Semicolon => Expr::Literal(Value::True),
             _ => self.expression()?,
         };
-        self.expect(TokenType::Semicolon, "Expect ';' after loop condition.")?;
+        self.expect(TokenType::Semicolon, "for condition")?;
 
         let increment = match self.peek_type()? {
             TokenType::RightParen => None,
             _ => Some(self.expression()?),
         };
-        self.expect(TokenType::RightParen, "Expect ')' after for clauses.")?;
+        self.expect(TokenType::RightParen, "for clause")?;
 
         let mut body = self.statement()?;
 
@@ -243,18 +254,18 @@ impl<'t> Parser<'t> {
         }
     }
 
-    fn expect(&mut self, token_type: TokenType, msg: &str) -> Result<Token<'t>> {
+    fn expect(&mut self, token_type: TokenType, before: &'static str) -> Result<Token<'t>> {
         if self.peek_type()? == token_type {
             let tok = self.advance()?;
             Ok(tok)
         } else {
-            Err(msg.into())
+            Err(SyntaxError::Missing(token_type.to_string(), before))
         }
     }
 
     fn expression_statement(&mut self) -> Result<Stmt<'t>> {
         let expr = self.expression()?;
-        self.expect(TokenType::Semicolon, "Expected ';' after value")?;
+        self.expect(TokenType::Semicolon, "value")?;
         Ok(Stmt::Expr(expr))
     }
 
@@ -271,7 +282,7 @@ impl<'t> Parser<'t> {
             if let Expr::Var(name) = expr {
                 return Ok(Expr::Assign(name, Box::new(value)));
             }
-            return Err("Invalid assignment target".into());
+            return Err(SyntaxError::InvalidAssignment);
         }
         Ok(expr)
     }
@@ -336,19 +347,14 @@ impl<'t> Parser<'t> {
             TokenType::LeftParen => {
                 self.advance()?;
                 let expr = self.expression()?;
-                match self.peek_type()? {
-                    TokenType::RightParen => {
-                        self.advance()?;
-                        Ok(Expr::Grouping(Box::new(expr)))
-                    }
-                    _ => Err("Expect ')' after expression".into()),
-                }
+                self.expect(TokenType::RightParen, "expression")?;
+                Ok(Expr::Grouping(Box::new(expr)))
             },
             TokenType::Identifier => {
                 let token = self.advance()?;
                 Ok(Expr::Var(token.value))
             },
-            _ => Err("Expected a literal or parenthesized expression".into())
+            _ => Err(SyntaxError::PrimaryFailure)
         }
     }
 
@@ -376,7 +382,7 @@ impl<'t> Parser<'t> {
 
     fn advance(&mut self) -> Result<Token<'t>> {
         // FIXME: Don't unwrap
-        self.scanner.next().unwrap_or_else(|| Err(ErrorKind::UnexpectedEOF.into()))
+        self.scanner.next().unwrap_or_else(|| Err(SyntaxError::UnexpectedEOF))
     }
 
     fn has_next(&mut self) -> bool {
@@ -389,8 +395,7 @@ impl<'t> Parser<'t> {
     fn peek_type(&mut self) -> Result<TokenType<'t>> {
         match self.scanner.peek() {
             Some(&Ok(tok)) => Ok(tok.ty),
-            // FIXME: Pass up the error
-            Some(&Err(_)) => Err("There was a scanning error".into()),
+            Some(&Err(ref err)) => Err(err.clone()),
             None => Ok(TokenType::EOF),
         }
     }
