@@ -1,6 +1,6 @@
 use std::str::CharIndices;
 use std::iter::Peekable;
-use super::ast::{BinaryOperator, UnaryOperator};
+use super::ast::{BinaryOperator, UnaryOperator, LogicalOperator};
 
 use errors::*;
 
@@ -70,6 +70,14 @@ impl<'s> TokenType<'s> {
             TokenType::Plus => Some(BinaryOperator::Plus),
             TokenType::Slash => Some(BinaryOperator::Slash),
             TokenType::Star => Some(BinaryOperator::Star),
+            _ => None
+        }
+    }
+
+    pub(super) fn into_logical(&self) -> Option<LogicalOperator> {
+        match *self {
+            TokenType::Keyword(Keyword::And) => Some(LogicalOperator::And),
+            TokenType::Keyword(Keyword::Or) => Some(LogicalOperator::Or),
             _ => None
         }
     }

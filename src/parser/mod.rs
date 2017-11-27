@@ -7,6 +7,10 @@
 ///
 /// ```
 /// expression → equality
+/// assignment → identifier "=" assignment
+///            | logic_or ;
+/// logic_or   → logic_and ( "or" logic_and )* ;
+/// logic_and  → equality ( "and" equality )* ;
 /// equality   → comparison ( ( "!=" | "==" ) comparison )*
 /// comparison → term ( ( ">" | ">=" | "<" | "<=" ) term )*
 /// term       → factor ( ( "-" | "+" ) factor )*
@@ -34,26 +38,37 @@ mod scanner;
 
 pub struct Parser<'t> {
     scanner: Peekable<Scanner<'t>>,
-    current: usize,
 }
 
 // Encapsulates rules with the following form:
 // name   → inner ( ( opA | obB | ... ) inner )*
-macro_rules! binary_expr_impl (
-    ($name:ident, $inner:ident, $($pattern:pat)|*) => (
+macro_rules! __binary_rule (
+    ($name:ident, $inner:ident, $convert:ident, $cons:expr, $($pattern:pat)|*) => (
         fn $name(&mut self) -> Result<Expr<'t>> {
             let mut expr = self.$inner()?;
             while let Ok(ty) = self.peek_type() {
                 let tok = match ty {
-                    $($pattern)|* => { self.advance() },
+                    $($pattern)|* => { self.advance()? },
                     _ => break,
                 };
                 let rhs = self.$inner()?;
-                let operator = tok.ty.into_binary().unwrap();
-                expr = Expr::binary(operator, expr, rhs);
+                let operator = tok.ty.$convert().unwrap();
+                expr = $cons(operator, expr, rhs);
             }
             Ok(expr)
         }
+    );
+);
+
+macro_rules! logical_impl (
+    ($name:ident, $inner:ident, $($pattern:pat)|*) => (
+        __binary_rule!($name, $inner, into_logical, Expr::logical, $($pattern)|*);
+    );
+);
+
+macro_rules! binary_impl (
+    ($name:ident, $inner:ident, $($pattern:pat)|*) => (
+        __binary_rule!($name, $inner, into_binary, Expr::binary, $($pattern)|*);
     );
 );
 
@@ -62,7 +77,6 @@ impl<'t> Parser<'t> {
         let scanner = Scanner::new(program);
         Parser {
             scanner: scanner.peekable(),
-            current: 0,
         }
     }
 
@@ -97,7 +111,7 @@ impl<'t> Parser<'t> {
     //             | statement ;
     fn declaration(&mut self) -> Result<Stmt<'t>> {
         if let TokenType::Keyword(Keyword::Var) = self.peek_type()? {
-            self.advance();
+            self.advance()?;
             return self.var_decl();
         }
         self.statement()
@@ -108,7 +122,7 @@ impl<'t> Parser<'t> {
         let ident = self.expect(TokenType::Identifier, "Expected identifier after keyword 'var'")?;
         let mut initializer = Expr::Literal(Value::Nil);
         if let TokenType::Equal = self.peek_type()? {
-            self.advance();
+            self.advance()?;
             initializer = self.expression()?;
         }
         self.expect(TokenType::Semicolon, "Expected semicolon after variable declaration")?;
@@ -122,23 +136,23 @@ impl<'t> Parser<'t> {
     fn statement(&mut self) -> Result<Stmt<'t>> {
         match self.peek_type()? {
             TokenType::Keyword(Keyword::While) => {
-                self.advance();
+                self.advance()?;
                 self.while_statement()
             },
             TokenType::Keyword(Keyword::Print) => {
-                self.advance();
+                self.advance()?;
                 self.print_statement()
             },
             TokenType::Keyword(Keyword::If) => {
-                self.advance();
+                self.advance()?;
                 self.if_statement()
             },
             TokenType::Keyword(Keyword::For) => {
-                self.advance();
+                self.advance()?;
                 self.for_statement()
             },
             TokenType::LeftBrace => {
-                self.advance();
+                self.advance()?;
                 self.block()
             },
             _ => self.expression_statement()
@@ -157,7 +171,7 @@ impl<'t> Parser<'t> {
         self.expect(TokenType::RightParen, "Expected ')' after if condition")?;
         let then_clause = self.declaration()?;
         if let TokenType::Keyword(Keyword::Else) = self.peek_type()? {
-            self.advance();
+            self.advance()?;
             let else_clause = self.declaration()?;
             Ok(Stmt::if_else_stmt(cond, then_clause, else_clause))
         } else {
@@ -177,11 +191,11 @@ impl<'t> Parser<'t> {
         self.expect(TokenType::LeftParen, "Expected '(' after for")?;
         let init = match self.peek_type()? {
             TokenType::Semicolon => {
-                self.advance();
+                self.advance()?;
                 None
             },
             TokenType::Keyword(Keyword::Var) => {
-                self.advance();
+                self.advance()?;
                 Some(self.var_decl()?)
             },
             _ => Some(self.expression_statement()?),
@@ -221,7 +235,7 @@ impl<'t> Parser<'t> {
         let mut block = Vec::new();
         loop {
             if let TokenType::RightBrace = self.peek_type()? {
-                self.advance();
+                self.advance()?;
                 return Ok(Stmt::Block(block));
             }
             let stmt = self.declaration()?;
@@ -231,7 +245,7 @@ impl<'t> Parser<'t> {
 
     fn expect(&mut self, token_type: TokenType, msg: &str) -> Result<Token<'t>> {
         if self.peek_type()? == token_type {
-            let tok = self.advance();
+            let tok = self.advance()?;
             Ok(tok)
         } else {
             Err(msg.into())
@@ -250,9 +264,9 @@ impl<'t> Parser<'t> {
     }
 
     fn assignment(&mut self) -> Result<Expr<'t>> {
-        let expr = self.equality()?;
+        let expr = self.logical_or()?;
         if let TokenType::Equal = self.peek_type()? {
-            self.advance();
+            self.advance()?;
             let value = self.assignment()?;
             if let Expr::Var(name) = expr {
                 return Ok(Expr::Assign(name, Box::new(value)));
@@ -262,25 +276,28 @@ impl<'t> Parser<'t> {
         Ok(expr)
     }
 
+    logical_impl!(logical_or, logical_and, TokenType::Keyword(Keyword::Or));
+    logical_impl!(logical_and, equality, TokenType::Keyword(Keyword::And));
+
     // equality   → comparison ( ( "!=" | "==" ) comparison )*
-    binary_expr_impl!(equality, comparison, TokenType::BangEq | TokenType::EqualEq);
+    binary_impl!(equality, comparison, TokenType::BangEq | TokenType::EqualEq);
     // comparison → term ( ( ">" | ">=" | "<" | "<=" ) term )*
-    binary_expr_impl!(comparison, term,
+    binary_impl!(comparison, term,
         TokenType::GreaterThan
         | TokenType::GreaterThanEq
         | TokenType::LessThan
         | TokenType::LessThanEq);
     // term       → factor ( ( "-" | "+" ) factor )*
-    binary_expr_impl!(term, factor, TokenType::Plus | TokenType::Minus);
+    binary_impl!(term, factor, TokenType::Plus | TokenType::Minus);
     // factor     → unary ( ( "/" | "*" ) unary )*
-    binary_expr_impl!(factor, unary, TokenType::Slash | TokenType::Star);
+    binary_impl!(factor, unary, TokenType::Slash | TokenType::Star);
 
     // unary      → ( "!" | "-" ) unary
     //            | primary
     fn unary(&mut self) -> Result<Expr<'t>> {
         match self.peek_type()? {
             TokenType::Bang | TokenType::Minus => {
-                let tok = self.advance();
+                let tok = self.advance()?;
                 let operator = tok.ty.into_unary().unwrap();
                 let unary = self.unary()?;
 
@@ -297,38 +314,38 @@ impl<'t> Parser<'t> {
         let peek_type = self.peek_type()?;
         match peek_type {
             TokenType::Keyword(Keyword::Nil) => {
-                self.advance();
+                self.advance()?;
                 Ok(Expr::Literal(Value::Nil))
             },
             TokenType::Keyword(Keyword::True) => {
-                self.advance();
+                self.advance()?;
                 Ok(Expr::Literal(Value::True))
             },
             TokenType::Keyword(Keyword::False) => {
-                self.advance();
+                self.advance()?;
                 Ok(Expr::Literal(Value::False))
             },
             TokenType::String(s) => {
-                self.advance();
+                self.advance()?;
                 Ok(Expr::Literal(Value::String(s.into())))
             },
             TokenType::Number(n) => {
-                self.advance();
+                self.advance()?;
                 Ok(Expr::Literal(Value::Number(n)))
             },
             TokenType::LeftParen => {
-                self.advance();
+                self.advance()?;
                 let expr = self.expression()?;
                 match self.peek_type()? {
                     TokenType::RightParen => {
-                        self.advance();
+                        self.advance()?;
                         Ok(Expr::Grouping(Box::new(expr)))
                     }
                     _ => Err("Expect ')' after expression".into()),
                 }
             },
             TokenType::Identifier => {
-                let token = self.advance();
+                let token = self.advance()?;
                 Ok(Expr::Var(token.value))
             },
             _ => Err("Expected a literal or parenthesized expression".into())
@@ -337,16 +354,12 @@ impl<'t> Parser<'t> {
 
     /// Discards tokens until a statement or expression boundary.
     fn synchronize(&mut self) {
-        while self.peek_type().is_ok() {
-            let token = self.advance();
-            // We are already at an explicit statement boundary
-            if token.ty == TokenType::Semicolon {
-                return;
-            }
-            // If the next token is a keyword we consider this an implicit
-            // statement boundary
-            let peek_type = self.peek_type().unwrap();
-            match peek_type {
+        while let Ok(ty) = self.peek_type() {
+            match ty {
+                TokenType::Semicolon => {
+                    self.advance().unwrap();
+                    return;
+                },
                 TokenType::Keyword(Keyword::Class)
                 | TokenType::Keyword(Keyword::Fun)
                 | TokenType::Keyword(Keyword::Var)
@@ -354,17 +367,16 @@ impl<'t> Parser<'t> {
                 | TokenType::Keyword(Keyword::If)
                 | TokenType::Keyword(Keyword::While)
                 | TokenType::Keyword(Keyword::Return)
-                | TokenType::Keyword(Keyword::Print) => return,
-                _ => {},
+                | TokenType::Keyword(Keyword::Print)
+                | TokenType::EOF => return,
+                _ => { self.advance().unwrap(); },
             }
         }
     }
 
-    fn advance(&mut self) -> Token<'t> {
+    fn advance(&mut self) -> Result<Token<'t>> {
         // FIXME: Don't unwrap
-        let token = self.scanner.next().unwrap().unwrap();
-        self.current += 1;
-        token
+        self.scanner.next().unwrap_or_else(|| Err(ErrorKind::UnexpectedEOF.into()))
     }
 
     fn has_next(&mut self) -> bool {
@@ -392,10 +404,13 @@ mod tests {
 
     #[test]
     fn expression() {
-        let mut parser = Parser::new("1 + -1 * (1 + 1)");
-        let expr = parser.expression().unwrap();
-        // assert_eq!(
-        // , expr);
+        let expressions = [
+            "1",
+            "1 + -1 * (1 + 1)"
+        ];
+        for expr in &expressions {
+            Parser::new(expr).expression().unwrap();
+        }
     }
 
     #[test]

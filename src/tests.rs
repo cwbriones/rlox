@@ -4,6 +4,7 @@ use eval::Eval;
 use eval::Context;
 use environment::Environment;
 use value::Value;
+use parser::Parser;
 
 pub struct CapturingContext {
     environment: Environment,
@@ -53,7 +54,8 @@ macro_rules! define_test (
         fn $name() {
             let mut context = CapturingContext::new();
             let prog = include_str!(concat!("examples/", stringify!($name), ".lox"));
-            prog.eval(&mut context).unwrap();
+            let mut parser = Parser::new(prog);
+            parser.parse().and_then(|prog| prog.as_slice().eval(&mut context)).unwrap();
 
             let out = include_str!(concat!("examples/", stringify!($name), ".lox.out"));
             assert_eq!(out, context.captured());
@@ -67,3 +69,4 @@ define_test!(if_statement);
 define_test!(while_loop);
 define_test!(for_loop);
 define_test!(fibonacci);
+define_test!(logical_operators);

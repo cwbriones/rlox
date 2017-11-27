@@ -10,12 +10,11 @@ pub enum Value {
     Void,
 }
 
-impl Eq for Value {
-}
+impl Eq for Value {}
 
-impl Into<bool> for Value {
-    fn into(self: Self) -> bool {
-        match self {
+impl Value {
+    pub fn truthy(&self) -> bool {
+        match *self {
             Value::Nil => false,
             Value::False => false,
             _ => true,

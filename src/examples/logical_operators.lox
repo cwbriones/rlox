@@ -1,0 +1,16 @@
+// Truthiness
+print 1 or 2;
+print 1 and 2;
+print "foo" or "bar";
+print "hello" and "world";
+print nil and "falsey";
+print false or "falsey";
+
+// Short-Circuit
+var a = "before";
+nil and (a = "after");
+print a;
+
+var b;
+(b = "before") or (b = "after");
+print b;

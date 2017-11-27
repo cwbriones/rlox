@@ -1,7 +1,6 @@
 use environment::Environment;
 use errors::*;
-use parser::Parser;
-use parser::ast::{Expr,Stmt,Binary,Unary,UnaryOperator,BinaryOperator};
+use parser::ast::{Expr,Stmt,Binary,Unary,UnaryOperator,BinaryOperator,Logical,LogicalOperator};
 use value::Value;
 
 pub trait Context {
@@ -73,15 +72,14 @@ impl<'t> Eval for Stmt<'t> {
                 context.pop_env();
             },
             Stmt::If(ref cond, ref then_clause, ref else_clause) => {
-                let cond: bool = cond.eval(context)?.into();
-                if cond {
+                if cond.eval(context)?.truthy() {
                     then_clause.eval(context)?;
                 } else if let &Some(ref else_clause) = else_clause {
                     else_clause.eval(context)?;
                 }
             },
 			Stmt::While(ref cond, ref body) => {
-				while cond.eval(context)?.into() {
+				while cond.eval(context)?.truthy() {
 					body.eval(context)?;
 				}
 			}
@@ -94,6 +92,7 @@ impl<'t> Eval for Expr<'t> {
     fn eval(&self, context: &mut Context) -> Result<Value> {
         match *self {
             Expr::Grouping(ref inner) => inner.eval(context),
+            Expr::Logical(ref inner) => inner.eval(context),
             Expr::Binary(ref inner) => inner.eval(context),
             Expr::Unary(ref inner) => inner.eval(context),
             Expr::Literal(ref inner) => inner.eval(context),
@@ -180,6 +179,22 @@ impl<'t> Eval for Binary<'t> {
     }
 }
 
+impl<'t> Eval for Logical<'t> {
+    fn eval(&self, context: &mut Context) -> Result<Value> {
+        let lhs = self.lhs.eval(context)?;
+        let lhsb = lhs.truthy();
+
+        let shortcircuit = match self.operator {
+            LogicalOperator::And => !lhsb,
+            LogicalOperator::Or => lhsb,
+        };
+        if shortcircuit {
+            return Ok(lhs);
+        }
+        self.rhs.eval(context)
+    }
+}
+
 impl<'t> Eval for Unary<'t> {
     fn eval(&self, context: &mut Context) -> Result<Value> {
         let operand = self.unary.eval(context)?;
@@ -195,7 +210,7 @@ impl<'t> Eval for Unary<'t> {
                 }
             },
             UnaryOperator::Bang => {
-                if operand.into() {
+                if operand.truthy() {
                     Ok(Value::False)
                 } else {
                     Ok(Value::True)
@@ -211,18 +226,15 @@ impl Eval for Value {
     }
 }
 
-impl<T> Eval for T
-    where
-        T: AsRef<str>
+impl<'a, 't> Eval for &'a [Stmt<'t>]
 {
-    fn eval(&self, context: &mut Context) -> Result<Value> {
-        let s = self.as_ref();
-        let mut parser = Parser::new(s);
-        let statements = parser.parse()?;
-        let mut last_value = Value::Void;
-        for stmt in statements {
-            last_value = stmt.eval(context)?;
+    fn eval(&self, ctx: &mut Context) -> Result<Value> {
+        {
+            let stmts = self.into_iter();
+            for stmt in stmts {
+                stmt.eval(ctx)?;
+            }
         }
-        Ok(last_value)
+        Ok(Value::Void)
     }
 }

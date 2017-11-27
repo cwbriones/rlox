@@ -11,6 +11,10 @@ pub mod dsl {
         Expr::binary(operator, lhs, rhs)
     }
 
+    pub fn logical<'t>(operator: LogicalOperator, lhs: Expr<'t>, rhs: Expr<'t>) -> Expr<'t> {
+        Expr::logical(operator, lhs, rhs)
+    }
+
     pub fn unary<'t>(operator: UnaryOperator, unary: Expr<'t>) -> Expr<'t> {
         Expr::unary(operator, unary)
     }
@@ -66,6 +70,7 @@ impl<'t> Stmt<'t> {
 
 #[derive(PartialEq)]
 pub enum Expr<'t> {
+    Logical(Logical<'t>),
     Binary(Binary<'t>),
     Grouping(Box<Expr<'t>>),
     Literal(Value),
@@ -77,6 +82,14 @@ pub enum Expr<'t> {
 impl<'t> Expr<'t> {
     pub(super) fn binary(operator: BinaryOperator, lhs: Expr<'t>, rhs: Expr<'t>) -> Self {
         Expr::Binary(Binary {
+            lhs: Box::new(lhs),
+            rhs: Box::new(rhs),
+            operator: operator,
+        })
+    }
+
+    pub(super) fn logical(operator: LogicalOperator, lhs: Expr<'t>, rhs: Expr<'t>) -> Self {
+        Expr::Logical(Logical {
             lhs: Box::new(lhs),
             rhs: Box::new(rhs),
             operator: operator,
@@ -121,6 +134,19 @@ pub enum BinaryOperator {
 }
 
 #[derive(PartialEq)]
+pub struct Logical<'t> {
+    pub lhs: Box<Expr<'t>>,
+    pub rhs: Box<Expr<'t>>,
+    pub operator: LogicalOperator
+}
+
+#[derive(PartialEq, Debug, Copy, Clone)]
+pub enum LogicalOperator {
+    And,
+    Or,
+}
+
+#[derive(PartialEq)]
 pub struct Unary<'t> {
     pub operator: UnaryOperator,
     pub unary: Box<Expr<'t>>,
@@ -157,6 +183,12 @@ impl PrettyPrinter {
                 write!(&mut self.buf, "{:indent$}Binary({:?})\n", "", op, indent=indent)?;
                 self.print_inner(&*bin.lhs, indent + 2)?;
                 self.print_inner(&*bin.rhs, indent + 2)
+            },
+            Expr::Logical(ref logical) => {
+                let op = logical.operator;
+                write!(&mut self.buf, "{:indent$}Logical({:?})\n", "", op, indent=indent)?;
+                self.print_inner(&*logical.lhs, indent + 2)?;
+                self.print_inner(&*logical.rhs, indent + 2)
             },
             Expr::Grouping(ref group) => {
                 self.print_inner(group, indent + 2)
