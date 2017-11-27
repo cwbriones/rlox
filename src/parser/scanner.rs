@@ -145,6 +145,7 @@ pub enum Keyword {
     This,
     True,
     While,
+    Break,
 }
 
 impl Keyword {
@@ -166,6 +167,7 @@ impl Keyword {
             Keyword::This   => "this",
             Keyword::True   => "true",
             Keyword::While  => "while",
+            Keyword::Break  => "break",
         }
     }
 }
@@ -197,6 +199,7 @@ impl str::FromStr for Keyword {
             "this"   => Ok(Keyword::This),
             "true"   => Ok(Keyword::True),
             "while"  => Ok(Keyword::While),
+            "break"  => Ok(Keyword::Break),
             _ => Err(()),
         }
     }
@@ -374,11 +377,9 @@ impl<'a> Scanner<'a> {
             c == '_'
         });
         let word = self.token_contents(start);
-        if let Ok(keyword) = str::parse::<Keyword>(word) {
-            TokenType::Keyword(keyword)
-        } else {
-            TokenType::Identifier
-        }
+        str::parse::<Keyword>(word)
+            .map(TokenType::Keyword)
+            .unwrap_or(TokenType::Identifier)
     }
 
     fn number(&mut self, start: usize) -> Result<TokenType<'a>> {

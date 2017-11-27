@@ -12,6 +12,8 @@ pub enum SyntaxError {
     PrimaryFailure,
     #[fail(display = "invalid assignment target")]
     InvalidAssignment,
+    #[fail(display = "'break' outside loop")]
+    BreakOutsideLoop,
 }
 
 pub type Result<T> = ::std::result::Result<T, SyntaxError>;

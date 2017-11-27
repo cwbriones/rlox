@@ -57,6 +57,7 @@ pub enum Stmt<'t> {
     Block(Vec<Stmt<'t>>),
     If(Expr<'t>, Box<Stmt<'t>>, Option<Box<Stmt<'t>>>),
     While(Expr<'t>, Box<Stmt<'t>>),
+    Break,
 }
 
 impl<'t> Stmt<'t> {

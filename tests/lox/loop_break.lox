@@ -1,0 +1,16 @@
+var a = "outer";
+while (true) {
+    var a = "inner";
+    break;
+}
+print "broke!";
+print a;
+
+while (true) {
+    while (true) {
+        break;
+    }
+    print "break 1";
+    break;
+}
+print "break 2";

@@ -10,6 +10,8 @@ pub enum RuntimeError {
     UndefinedVariable(String),
     #[fail(display = "invalid operands, expected {}", _0)]
     InvalidOperands(String),
+    #[fail(display = "break")]
+    Break,
 }
 
 pub type Result<T> = ::std::result::Result<T, RuntimeError>;
@@ -77,8 +79,11 @@ impl<'t> Eval for Stmt<'t> {
             },
             Stmt::Block(ref stmts) => {
                 context.push_env();
-                for inner in stmts.iter() {
-                    inner.eval(context)?;
+                for stmt in stmts.iter() {
+                    if let Err(err) = stmt.eval(context) {
+                        context.pop_env();
+                        return Err(err);
+                    }
                 }
                 context.pop_env();
             },
@@ -91,9 +96,13 @@ impl<'t> Eval for Stmt<'t> {
             },
 			Stmt::While(ref cond, ref body) => {
 				while cond.eval(context)?.truthy() {
-					body.eval(context)?;
+					match body.eval(context) {
+                        Err(RuntimeError::Break) => break,
+                        val => val,
+                    }?;
 				}
-			}
+			},
+            Stmt::Break => return Err(RuntimeError::Break),
         }
         Ok(Value::Void)
     }
