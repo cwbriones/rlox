@@ -1,6 +1,3 @@
-use std::fmt::Debug;
-use std::fmt::Write;
-
 use value::Value;
 
 #[cfg(test)]
@@ -70,7 +67,7 @@ impl<'t> Stmt<'t> {
     }
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Debug)]
 pub enum Expr<'t> {
     Logical(Logical<'t>),
     Binary(Binary<'t>),
@@ -106,15 +103,7 @@ impl<'t> Expr<'t> {
     }
 }
 
-impl<'t> Debug for Expr<'t> {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> FmtResult<()> {
-        let pp = PrettyPrinter::new();
-        let s = pp.print(self)?;
-        write!(f, "{}", s)
-    }
-}
-
-#[derive(PartialEq)]
+#[derive(PartialEq, Debug)]
 pub struct Binary<'t> {
     pub lhs: Box<Expr<'t>>,
     pub rhs: Box<Expr<'t>>,
@@ -135,7 +124,24 @@ pub enum BinaryOperator {
     Star,
 }
 
-#[derive(PartialEq)]
+impl BinaryOperator {
+    pub fn to_str(&self) -> &str {
+        match *self {
+            BinaryOperator::Equal => "=",
+            BinaryOperator::BangEq => "!=",
+            BinaryOperator::GreaterThan => ">",
+            BinaryOperator::GreaterThanEq => ">=",
+            BinaryOperator::LessThan => "<",
+            BinaryOperator::LessThanEq => "<=",
+            BinaryOperator::Minus => "-",
+            BinaryOperator::Plus => "+",
+            BinaryOperator::Slash => "/",
+            BinaryOperator::Star => "*",
+        }
+    }
+}
+
+#[derive(PartialEq, Debug)]
 pub struct Logical<'t> {
     pub lhs: Box<Expr<'t>>,
     pub rhs: Box<Expr<'t>>,
@@ -148,7 +154,16 @@ pub enum LogicalOperator {
     Or,
 }
 
-#[derive(PartialEq)]
+impl LogicalOperator {
+    pub fn to_str(&self) -> &str {
+        match *self {
+            LogicalOperator::And => "and",
+            LogicalOperator::Or  => "or",
+        }
+    }
+}
+
+#[derive(PartialEq, Debug)]
 pub struct Unary<'t> {
     pub operator: UnaryOperator,
     pub unary: Box<Expr<'t>>,
@@ -160,55 +175,11 @@ pub enum UnaryOperator {
     Bang,
 }
 
-struct PrettyPrinter {
-    buf: String,
-}
-
-type FmtResult<T> = ::std::result::Result<T, ::std::fmt::Error>;
-
-impl PrettyPrinter {
-    fn new() -> Self {
-        PrettyPrinter {
-            buf: String::new(),
-        }
-    }
-
-    fn print<'t>(mut self, expr: &Expr<'t>) -> FmtResult<String> {
-        self.print_inner(expr, 0)?;
-        Ok(self.buf)
-    }
-
-    fn print_inner<'t>(&mut self, expr: &Expr<'t>, indent: usize) -> FmtResult<()> {
-        match *expr {
-            Expr::Binary(ref bin) => {
-                let op = bin.operator;
-                write!(&mut self.buf, "{:indent$}Binary({:?})\n", "", op, indent=indent)?;
-                self.print_inner(&*bin.lhs, indent + 2)?;
-                self.print_inner(&*bin.rhs, indent + 2)
-            },
-            Expr::Logical(ref logical) => {
-                let op = logical.operator;
-                write!(&mut self.buf, "{:indent$}Logical({:?})\n", "", op, indent=indent)?;
-                self.print_inner(&*logical.lhs, indent + 2)?;
-                self.print_inner(&*logical.rhs, indent + 2)
-            },
-            Expr::Grouping(ref group) => {
-                self.print_inner(group, indent + 2)
-            },
-            Expr::Literal(ref lit) => {
-                write!(&mut self.buf, "{:indent$}{:?}\n", "", lit, indent=indent)
-            },
-            Expr::Unary(ref unary) => {
-                let op = unary.operator;
-                write!(&mut self.buf, "{:indent$}Unary({:?})\n", "", op, indent=indent)?;
-                self.print_inner(&*unary.unary, indent + 2)
-            },
-            Expr::Var(ref var) => {
-                write!(&mut self.buf, "{:indent$}Var({:?})\n", "", var, indent=indent)
-            },
-            Expr::Assign(var, ref _expr) => {
-                write!(&mut self.buf, "{:indent$}Assign({:?})\n", "", var, indent=indent)
-            }
+impl UnaryOperator {
+    pub fn to_str(&self) -> &str {
+        match *self {
+            UnaryOperator::Minus => "-",
+            UnaryOperator::Bang  => "!",
         }
     }
 }

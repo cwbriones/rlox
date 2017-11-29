@@ -14,12 +14,14 @@ use eval::Eval;
 use eval::StandardContext;
 use parser::Parser;
 use repl::Repl;
+use pretty_printer::PrettyPrinter;
 
 mod environment;
 mod parser;
 mod eval;
 mod value;
 mod repl;
+mod pretty_printer;
 
 fn main() {
     env_logger::init().expect("Failed to initialize logger");
@@ -27,25 +29,51 @@ fn main() {
     let mut args = env::args();
     let _ = args.next();
 
-    if let Some(ref arg) = args.next() {
-        match &arg[..] {
+    if let Some(arg) = args.next() {
+        let res = match &arg[..] {
             "help" => {
                 println!("Usage: rlox [script]");
                 ::std::process::exit(0);
             },
-            sourcefile => {
-                if let Err(err) = run_file(sourcefile) {
-                    eprintln!("[error]: {}", err);
+            "print" => {
+                let arg = args.next();
+                if arg.is_none() {
+                    eprintln!("[error]: Missing argument to print");
                     ::std::process::exit(1);
                 }
-            }
+                pretty_print(&arg.unwrap())
+            },
+            sourcefile => execute(sourcefile),
+        };
+        if let Err(err) = res {
+            eprintln!("[error]: {}", err);
+            ::std::process::exit(2);
         }
     } else {
         Repl::new().run();
     }
 }
 
-fn run_file(filename: &str) -> Result<(), failure::Error> {
+fn pretty_print(filename: &str) -> Result<(), failure::Error> {
+    let mut file = File::open(filename)?;
+    let mut contents = String::new();
+    file.read_to_string(&mut contents)?;
+    let mut parser = Parser::new(&contents);
+    let stmts = match parser.parse() {
+        Ok(stmts) => stmts,
+        Err(errors) => {
+            for err in errors {
+                eprintln!("[error]: Parse: {}", err);
+            }
+            ::std::process::exit(1);
+        }
+    };
+    let output = PrettyPrinter::new().pretty_print(&stmts);
+    println!("{}", output);
+    Ok(())
+}
+
+fn execute(filename: &str) -> Result<(), failure::Error> {
     let mut file = File::open(filename)?;
     let mut contents = String::new();
     file.read_to_string(&mut contents)?;
