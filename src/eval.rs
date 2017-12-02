@@ -64,7 +64,7 @@ pub trait Eval {
     fn eval(&self, context: &mut Context) -> Result<Value>;
 }
 
-impl<'t> Eval for Stmt<'t> {
+impl Eval for Stmt {
     fn eval(&self, context: &mut Context) -> Result<Value> {
         match *self {
             Stmt::Expr(ref inner) => { inner.eval(context)?; }
@@ -108,7 +108,7 @@ impl<'t> Eval for Stmt<'t> {
     }
 }
 
-impl<'t> Eval for Expr<'t> {
+impl Eval for Expr {
     fn eval(&self, context: &mut Context) -> Result<Value> {
         match *self {
             Expr::Grouping(ref inner) => inner.eval(context),
@@ -116,22 +116,22 @@ impl<'t> Eval for Expr<'t> {
             Expr::Binary(ref inner) => inner.eval(context),
             Expr::Unary(ref inner) => inner.eval(context),
             Expr::Literal(ref inner) => inner.eval(context),
-            Expr::Var(var) => {
+            Expr::Var(ref var) => {
                 let env = context.env();
                 match env.lookup(var) {
-                    None => return Err(RuntimeError::UndefinedVariable(var.into())),
+                    None => return Err(RuntimeError::UndefinedVariable(var.clone())),
                     Some(v) => {
                         return Ok((*v).clone())
                     }
                 }
             },
-            Expr::Assign(var, ref lhs) => {
+            Expr::Assign(ref var, ref lhs) => {
                 let lhs = lhs.eval(context)?;
                 let env = context.env_mut();
                 if env.rebind(var, lhs.clone()) {
                     Ok(lhs)
                 } else {
-                    Err(RuntimeError::UndefinedVariable(var.into()))
+                    Err(RuntimeError::UndefinedVariable(var.clone()))
                 }
             },
         }
@@ -166,7 +166,7 @@ macro_rules! comparison_op (
     );
 );
 
-impl<'t> Eval for Binary<'t> {
+impl Eval for Binary {
     fn eval(&self, context: &mut Context) -> Result<Value> {
         let lhs = self.lhs.eval(context)?;
         let rhs = self.rhs.eval(context)?;
@@ -203,7 +203,7 @@ impl<'t> Eval for Binary<'t> {
     }
 }
 
-impl<'t> Eval for Logical<'t> {
+impl Eval for Logical {
     fn eval(&self, context: &mut Context) -> Result<Value> {
         let lhs = self.lhs.eval(context)?;
         let lhsb = lhs.truthy();
@@ -219,7 +219,7 @@ impl<'t> Eval for Logical<'t> {
     }
 }
 
-impl<'t> Eval for Unary<'t> {
+impl Eval for Unary {
     fn eval(&self, context: &mut Context) -> Result<Value> {
         let operand = self.unary.eval(context)?;
         match self.operator {
@@ -248,7 +248,7 @@ impl Eval for Value {
     }
 }
 
-impl<'a, 't> Eval for &'a [Stmt<'t>]
+impl<'a> Eval for &'a [Stmt]
 {
     fn eval(&self, ctx: &mut Context) -> Result<Value> {
         {

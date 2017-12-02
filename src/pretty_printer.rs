@@ -14,7 +14,7 @@ impl PrettyPrinter {
         }
     }
 
-    pub fn pretty_print<'t>(mut self, stmts: &[Stmt<'t>]) -> String {
+    pub fn pretty_print(mut self, stmts: &[Stmt]) -> String {
         let mut iter = stmts.iter();
         if let Some(stmt) = iter.next() {
             self.push_stmt(stmt, 0, false);
@@ -35,7 +35,7 @@ impl PrettyPrinter {
         self
     }
 
-    fn push_stmt<'t>(&mut self, stmt: &Stmt<'t>, indent: usize, newline: bool) {
+    fn push_stmt(&mut self, stmt: &Stmt, indent: usize, newline: bool) {
         let indent_size = self.indent_size;
         if newline {
             self.newline(indent);
@@ -47,7 +47,7 @@ impl PrettyPrinter {
             Stmt::Print(ref expr) => {
                 self.push("print ").push_expr(expr).push_char(';');
             },
-            Stmt::Var(var, ref expr) => {
+            Stmt::Var(ref var, ref expr) => {
                 self.push("var ").push(var).push(" = ").push_expr(expr).push_char(';');
             },
             Stmt::Block(ref stmts) => {
@@ -96,7 +96,7 @@ impl PrettyPrinter {
         self
     }
 
-    fn push_expr<'t>(&mut self, expr: &Expr<'t>) -> &mut Self {
+    fn push_expr(&mut self, expr: &Expr) -> &mut Self {
         match *expr {
             Expr::Binary(ref bin) => {
                 let op = bin.operator;
@@ -130,7 +130,7 @@ impl PrettyPrinter {
             Expr::Var(ref var) => {
                 self.push(var);
             },
-            Expr::Assign(var, ref expr) => {
+            Expr::Assign(ref var, ref expr) => {
                 self.push(var).push(" = ").push_expr(expr);
             }
         }
@@ -138,7 +138,7 @@ impl PrettyPrinter {
     }
 }
 
-fn is_block<'t>(stmt: &Stmt<'t>) -> bool {
+fn is_block(stmt: &Stmt) -> bool {
     match *stmt {
         Stmt::Block(_) => true,
         _ => false,

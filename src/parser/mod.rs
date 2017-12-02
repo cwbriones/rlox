@@ -45,7 +45,7 @@ pub struct Parser<'t> {
 // name   → inner ( ( opA | obB | ... ) inner )*
 macro_rules! __binary_rule (
     ($name:ident, $inner:ident, $convert:ident, $cons:expr, $($pattern:pat)|*) => (
-        fn $name(&mut self) -> Result<Expr<'t>> {
+        fn $name(&mut self) -> Result<Expr> {
             let mut expr = self.$inner()?;
             while let Ok(ty) = self.peek_type() {
                 let tok = match ty {
@@ -74,7 +74,7 @@ macro_rules! binary_impl (
 );
 
 impl<'t> Iterator for Parser<'t> {
-    type Item = Result<Stmt<'t>>;
+    type Item = Result<Stmt>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.has_next() {
@@ -94,7 +94,7 @@ impl<'t> Parser<'t> {
         }
     }
 
-    pub fn parse(&mut self) -> ::std::result::Result<Vec<Stmt<'t>>, Vec<SyntaxError>> {
+    pub fn parse(&mut self) -> ::std::result::Result<Vec<Stmt>, Vec<SyntaxError>> {
         let mut statements = Vec::new();
         let mut errors = Vec::new();
         for res in self {
@@ -110,7 +110,7 @@ impl<'t> Parser<'t> {
     }
 
     // program → declaration* eof ;
-    pub fn parse_statement(&mut self) -> Result<Stmt<'t>> {
+    pub fn parse_statement(&mut self) -> Result<Stmt> {
         match self.declaration() {
             Ok(stmt) => Ok(stmt),
             Err(err) => {
@@ -122,7 +122,7 @@ impl<'t> Parser<'t> {
 
     // declaration → varDecl
     //             | statement ;
-    fn declaration(&mut self) -> Result<Stmt<'t>> {
+    fn declaration(&mut self) -> Result<Stmt> {
         if let TokenType::Keyword(Keyword::Var) = self.peek_type()? {
             self.advance()?;
             return self.var_decl();
@@ -131,7 +131,7 @@ impl<'t> Parser<'t> {
     }
 
     // varDecl → "var" IDENTIFIER ( "=" expression )? ";" ;
-    fn var_decl(&mut self) -> Result<Stmt<'t>> {
+    fn var_decl(&mut self) -> Result<Stmt> {
         let ident = self.expect(TokenType::Identifier, "keyword 'var'")?;
         let mut initializer = Expr::Literal(Value::Nil);
         if let TokenType::Equal = self.peek_type()? {
@@ -139,14 +139,14 @@ impl<'t> Parser<'t> {
             initializer = self.expression()?;
         }
         self.expect(TokenType::Semicolon, "variable declaration")?;
-        Ok(Stmt::Var(ident.value, initializer))
+        Ok(Stmt::Var(ident.value.into(), initializer))
     }
 
     // statement  → exprStmt
     //            | ifStmt
     //            | printStmt
     //            | block ;
-    fn statement(&mut self) -> Result<Stmt<'t>> {
+    fn statement(&mut self) -> Result<Stmt> {
         match self.peek_type()? {
             TokenType::Keyword(Keyword::While) => {
                 self.advance()?;
@@ -180,13 +180,13 @@ impl<'t> Parser<'t> {
         }
     }
 
-    fn print_statement(&mut self) -> Result<Stmt<'t>> {
+    fn print_statement(&mut self) -> Result<Stmt> {
         let value = self.expression()?;
         self.expect(TokenType::Semicolon, "value")?;
         Ok(Stmt::Print(value))
     }
 
-    fn if_statement(&mut self) -> Result<Stmt<'t>> {
+    fn if_statement(&mut self) -> Result<Stmt> {
         self.expect(TokenType::LeftParen, "if")?;
         let cond = self.expression()?;
         self.expect(TokenType::RightParen, "if condition")?;
@@ -200,7 +200,7 @@ impl<'t> Parser<'t> {
         }
     }
 
-    fn while_statement(&mut self) -> Result<Stmt<'t>> {
+    fn while_statement(&mut self) -> Result<Stmt> {
         self.expect(TokenType::LeftParen, "while")?;
         let cond = self.expression()?;
         self.expect(TokenType::RightParen, "while condition")?;
@@ -210,7 +210,7 @@ impl<'t> Parser<'t> {
 		Ok(Stmt::While(cond, Box::new(body)))
     }
 
-    fn for_statement(&mut self) -> Result<Stmt<'t>> {
+    fn for_statement(&mut self) -> Result<Stmt> {
         self.expect(TokenType::LeftParen, "for")?;
         let init = match self.peek_type()? {
             TokenType::Semicolon => {
@@ -256,7 +256,7 @@ impl<'t> Parser<'t> {
     }
 
     // block  → '{' declaration * '}'
-    fn block(&mut self) -> Result<Stmt<'t>> {
+    fn block(&mut self) -> Result<Stmt> {
         let mut block = Vec::new();
         loop {
             if let TokenType::RightBrace = self.peek_type()? {
@@ -277,18 +277,18 @@ impl<'t> Parser<'t> {
         }
     }
 
-    fn expression_statement(&mut self) -> Result<Stmt<'t>> {
+    fn expression_statement(&mut self) -> Result<Stmt> {
         let expr = self.expression()?;
         self.expect(TokenType::Semicolon, "value")?;
         Ok(Stmt::Expr(expr))
     }
 
     // expression → equality
-    pub fn expression(&mut self) -> Result<Expr<'t>> {
+    pub fn expression(&mut self) -> Result<Expr> {
         self.assignment()
     }
 
-    fn assignment(&mut self) -> Result<Expr<'t>> {
+    fn assignment(&mut self) -> Result<Expr> {
         let expr = self.logical_or()?;
         if let TokenType::Equal = self.peek_type()? {
             self.advance()?;
@@ -319,7 +319,7 @@ impl<'t> Parser<'t> {
 
     // unary      → ( "!" | "-" ) unary
     //            | primary
-    fn unary(&mut self) -> Result<Expr<'t>> {
+    fn unary(&mut self) -> Result<Expr> {
         match self.peek_type()? {
             TokenType::Bang | TokenType::Minus => {
                 let tok = self.advance()?;
@@ -335,7 +335,7 @@ impl<'t> Parser<'t> {
     // primary    → NUMBER | STRING | "false" | "true" | "nil"
     //            | "(" expression ")"
     //            | IDENTIFIER
-    fn primary(&mut self) -> Result<Expr<'t>> {
+    fn primary(&mut self) -> Result<Expr> {
         let peek_type = self.peek_type()?;
         match peek_type {
             TokenType::Keyword(Keyword::Nil) => {
@@ -366,7 +366,7 @@ impl<'t> Parser<'t> {
             },
             TokenType::Identifier => {
                 let token = self.advance()?;
-                Ok(Expr::Var(token.value))
+                Ok(Expr::Var(token.value.into()))
             },
             _ => Err(SyntaxError::PrimaryFailure)
         }
@@ -470,9 +470,9 @@ mod tests {
         let mut parser = Parser::new(prog);
         let statements = parser.parse().unwrap();
         assert_eq!(vec![
-            Stmt::Var("a", nil()),
-            Stmt::Var("b", binary(BinaryOperator::Plus, number(1.0), number(1.0))),
-            Stmt::Expr(Expr::Assign("a", Box::new(number(1.0))))
+            Stmt::Var("a".into(), nil()),
+            Stmt::Var("b".into(), binary(BinaryOperator::Plus, number(1.0), number(1.0))),
+            Stmt::Expr(Expr::Assign("a".into(), Box::new(number(1.0))))
         ], statements);
     }
 
@@ -489,8 +489,8 @@ mod tests {
         let statements = parser.parse().unwrap();
         assert_eq!(vec![
             Stmt::Block(vec![
-                Stmt::Var("a", number(1.0)),
-                Stmt::Print(Expr::Var("a")),
+                Stmt::Var("a".into(), number(1.0)),
+                Stmt::Print(Expr::Var("a".into())),
             ])
         ], statements);
     }
@@ -505,8 +505,8 @@ mod tests {
         let mut parser = Parser::new(prog);
         let statements = parser.parse().unwrap();
         assert_eq!(vec![
-            Stmt::Var("a", nil()),
-            Stmt::Var("b", binary(BinaryOperator::Plus, number(1.0), number(1.0)))
+            Stmt::Var("a".into(), nil()),
+            Stmt::Var("b".into(), binary(BinaryOperator::Plus, number(1.0), number(1.0)))
         ], statements);
     }
 
@@ -560,7 +560,7 @@ mod tests {
         let statements = parser.parse().unwrap();
         assert_eq!(vec![
             Stmt::While(
-                binary(BinaryOperator::GreaterThan, var("a"), number(1.0)),
+                binary(BinaryOperator::GreaterThan, var("a".into()), number(1.0)),
                 Box::new(Stmt::Block(vec![
                     Stmt::Print(string("body"))
                 ]))
