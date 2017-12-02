@@ -1,6 +1,7 @@
 use environment::Environment;
-use parser::ast::{Expr,Stmt,Binary,Unary,UnaryOperator,BinaryOperator,Logical,LogicalOperator};
+use parser::ast::{Expr,Stmt,Binary,Unary,UnaryOperator,BinaryOperator,Logical,LogicalOperator,Call};
 use value::Value;
+use value::LoxFunction;
 
 #[derive(Debug, Fail)]
 pub enum RuntimeError {
@@ -12,112 +13,118 @@ pub enum RuntimeError {
     InvalidOperands(String),
     #[fail(display = "break")]
     Break,
+    #[fail(display = "Can only call functions and classes (at line {})", line)]
+    InvalidCallee {
+        line: usize,
+    },
+    #[fail(display = "Expected {} argument(s) but got {}", expected, got)]
+    BadArity{
+        got: usize,
+        expected: usize,
+    },
+    #[fail(display = "return")]
+    Return,
 }
 
 pub type Result<T> = ::std::result::Result<T, RuntimeError>;
 
-pub trait Context {
-    fn println(&mut self, &Value);
-    fn env(&self) -> &Environment;
-    fn env_mut(&mut self) -> &mut Environment;
-    fn push_env(&mut self);
-    fn pop_env(&mut self);
+pub struct Interpreter {
+    globals: Environment,
+
+    // Stack of return values
+    //
+    // Ideally we could add the value to the RuntimeError::Return variant but that would require
+    // Value to be Sync, which is quite complicated due to closures.
+    retvals: Vec<Value>,
 }
 
-pub struct StandardContext {
-    environment: Environment,
-}
-
-impl StandardContext {
+impl Interpreter {
     pub fn new() -> Self {
-        StandardContext {
-            environment: Environment::new()
-        }
-    }
-}
-
-impl Context for StandardContext {
-    fn env(&self) -> &Environment {
-        &self.environment
-    }
-
-    fn env_mut(&mut self) -> &mut Environment {
-        &mut self.environment
-    }
-
-    fn push_env(&mut self) {
-        self.environment = self.environment.extend();
-    }
-
-    fn pop_env(&mut self) {
-        if let Some(p) = self.environment.parent() {
-            self.environment = p;
+        Interpreter {
+            globals: Environment::new(),
+            retvals: Vec::new(),
         }
     }
 
-    fn println(&mut self, v: &Value) {
-        println!("{}", v);
+    pub fn interpret<E: Eval>(&mut self, executable: E) -> Result<Value> {
+        let mut globals = self.globals.clone();
+        executable.eval(self, &mut globals)
+    }
+
+    fn push_return(&mut self, value: Value) {
+        self.retvals.push(value);
+    }
+
+    fn pop_return(&mut self) -> Value {
+        self.retvals.pop().expect("return stack to be nonempty")
     }
 }
 
 pub trait Eval {
-    fn eval(&self, context: &mut Context) -> Result<Value>;
+    fn eval(&self, intepreter: &mut Interpreter, env: &mut Environment) -> Result<Value>;
 }
 
 impl Eval for Stmt {
-    fn eval(&self, context: &mut Context) -> Result<Value> {
+    fn eval(&self, interpreter: &mut Interpreter, env: &mut Environment) -> Result<Value> {
         match *self {
-            Stmt::Expr(ref inner) => { inner.eval(context)?; }
+            Stmt::Expr(ref inner) => { inner.eval(interpreter, env)?; }
             Stmt::Print(ref inner) => {
-                let evald = inner.eval(context)?;
-                context.println(&evald);
+                let evald = inner.eval(interpreter, env)?;
+                println!("{}", evald);
             },
             Stmt::Var(ref var, ref expr) => {
-                let val = expr.eval(context)?;
+                let val = expr.eval(interpreter, env)?;
                 debug!("Set var '{}' to value {}", var, val);
-                context.env_mut().bind(var, val);
+                env.bind(var, val);
+            },
+            Stmt::Function(ref func_decl) => {
+                let name = &(**func_decl).name;
+                let func = Value::Function(LoxFunction::new(func_decl.clone(), env.clone()));
+                env.bind(name, func);
             },
             Stmt::Block(ref stmts) => {
-                context.push_env();
+                let mut enclosing = env.extend();
                 for stmt in stmts.iter() {
-                    if let Err(err) = stmt.eval(context) {
-                        context.pop_env();
+                    if let Err(err) = stmt.eval(interpreter, &mut enclosing) {
                         return Err(err);
                     }
                 }
-                context.pop_env();
             },
             Stmt::If(ref cond, ref then_clause, ref else_clause) => {
-                if cond.eval(context)?.truthy() {
-                    then_clause.eval(context)?;
+                if cond.eval(interpreter, env)?.truthy() {
+                    then_clause.eval(interpreter, env)?;
                 } else if let &Some(ref else_clause) = else_clause {
-                    else_clause.eval(context)?;
+                    else_clause.eval(interpreter, env)?;
                 }
             },
 			Stmt::While(ref cond, ref body) => {
-				while cond.eval(context)?.truthy() {
-					match body.eval(context) {
+				while cond.eval(interpreter, env)?.truthy() {
+					match body.eval(interpreter, env) {
                         Err(RuntimeError::Break) => break,
                         val => val,
                     }?;
 				}
 			},
             Stmt::Break => return Err(RuntimeError::Break),
+            Stmt::Return(ref expr) => {
+                let retval = expr.eval(interpreter, env)?;
+                interpreter.push_return(retval);
+                return Err(RuntimeError::Return);
+            },
         }
         Ok(Value::Void)
     }
 }
 
 impl Eval for Expr {
-    fn eval(&self, context: &mut Context) -> Result<Value> {
+    fn eval(&self, interpreter: &mut Interpreter, env: &mut Environment) -> Result<Value> {
         match *self {
-            Expr::Grouping(ref inner) => inner.eval(context),
-            Expr::Logical(ref inner) => inner.eval(context),
-            Expr::Binary(ref inner) => inner.eval(context),
-            Expr::Unary(ref inner) => inner.eval(context),
-            Expr::Literal(ref inner) => inner.eval(context),
+            Expr::Grouping(ref inner) => inner.eval(interpreter, env),
+            Expr::Logical(ref inner) => inner.eval(interpreter, env),
+            Expr::Binary(ref inner) => inner.eval(interpreter, env),
+            Expr::Unary(ref inner) => inner.eval(interpreter, env),
+            Expr::Literal(ref inner) => inner.eval(interpreter, env),
             Expr::Var(ref var) => {
-                let env = context.env();
                 match env.lookup(var) {
                     None => return Err(RuntimeError::UndefinedVariable(var.clone())),
                     Some(v) => {
@@ -126,14 +133,14 @@ impl Eval for Expr {
                 }
             },
             Expr::Assign(ref var, ref lhs) => {
-                let lhs = lhs.eval(context)?;
-                let env = context.env_mut();
+                let lhs = lhs.eval(interpreter, env)?;
                 if env.rebind(var, lhs.clone()) {
                     Ok(lhs)
                 } else {
                     Err(RuntimeError::UndefinedVariable(var.clone()))
                 }
             },
+            Expr::Call(ref inner) => inner.eval(interpreter, env),
         }
     }
 }
@@ -166,10 +173,46 @@ macro_rules! comparison_op (
     );
 );
 
+impl Eval for Call {
+    fn eval(&self, interpreter: &mut Interpreter, env: &mut Environment) -> Result<Value> {
+        let callee = self.callee.eval(interpreter, env)?;
+        let args = self.arguments
+            .iter()
+            .map(|arg| arg.eval(interpreter, env))
+            .collect::<Result<Vec<_>>>()?;
+        if let Value::Function(ref fun) = callee {
+            let decl = &fun.declaration;
+            if fun.arity() != args.len() {
+                return Err(RuntimeError::BadArity {
+                    got: args.len(),
+                    expected: fun.arity(),
+                });
+            }
+            // Create new environment
+            let mut fun_env = fun.closure.extend();
+            for (p, a) in decl.parameters.iter().zip(args) {
+                fun_env.bind(p, a);
+            }
+            // Evaluate body
+            for stmt in &decl.body {
+                match stmt.eval(interpreter, &mut fun_env) {
+                    Err(RuntimeError::Return) => {
+                        let retval = interpreter.pop_return();
+                        return Ok(retval);
+                    },
+                    val => val
+                }?;
+            }
+            return Ok(Value::Nil)
+        }
+        Err(RuntimeError::InvalidCallee{line: self.position.line})
+    }
+}
+
 impl Eval for Binary {
-    fn eval(&self, context: &mut Context) -> Result<Value> {
-        let lhs = self.lhs.eval(context)?;
-        let rhs = self.rhs.eval(context)?;
+    fn eval(&self, interpreter: &mut Interpreter, env: &mut Environment) -> Result<Value> {
+        let lhs = self.lhs.eval(interpreter, env)?;
+        let rhs = self.rhs.eval(interpreter, env)?;
         let op = &self.operator;
 
         match *op {
@@ -204,8 +247,8 @@ impl Eval for Binary {
 }
 
 impl Eval for Logical {
-    fn eval(&self, context: &mut Context) -> Result<Value> {
-        let lhs = self.lhs.eval(context)?;
+    fn eval(&self, interpreter: &mut Interpreter, env: &mut Environment) -> Result<Value> {
+        let lhs = self.lhs.eval(interpreter, env)?;
         let lhsb = lhs.truthy();
 
         let shortcircuit = match self.operator {
@@ -215,13 +258,13 @@ impl Eval for Logical {
         if shortcircuit {
             return Ok(lhs);
         }
-        self.rhs.eval(context)
+        self.rhs.eval(interpreter, env)
     }
 }
 
 impl Eval for Unary {
-    fn eval(&self, context: &mut Context) -> Result<Value> {
-        let operand = self.unary.eval(context)?;
+    fn eval(&self, interpreter: &mut Interpreter, env: &mut Environment) -> Result<Value> {
+        let operand = self.unary.eval(interpreter, env)?;
         match self.operator {
             UnaryOperator::Minus => {
                 match operand {
@@ -243,18 +286,18 @@ impl Eval for Unary {
 }
 
 impl Eval for Value {
-    fn eval(&self, _: &mut Context) -> Result<Value> {
+    fn eval(&self, _: &mut Interpreter, _: &mut Environment) -> Result<Value> {
         Ok(self.clone())
     }
 }
 
 impl<'a> Eval for &'a [Stmt]
 {
-    fn eval(&self, ctx: &mut Context) -> Result<Value> {
+    fn eval(&self, interpreter: &mut Interpreter, env: &mut Environment) -> Result<Value> {
         {
             let stmts = self.into_iter();
             for stmt in stmts {
-                stmt.eval(ctx)?;
+                stmt.eval(interpreter, env)?;
             }
         }
         Ok(Value::Void)

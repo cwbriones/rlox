@@ -10,8 +10,7 @@ use std::env;
 use std::io::prelude::*;
 use std::fs::File;
 
-use eval::Eval;
-use eval::StandardContext;
+use eval::Interpreter;
 use parser::Parser;
 use repl::Repl;
 use pretty_printer::PrettyPrinter;
@@ -77,11 +76,10 @@ fn execute(filename: &str) -> Result<(), failure::Error> {
     let mut file = File::open(filename)?;
     let mut contents = String::new();
     file.read_to_string(&mut contents)?;
-    let mut context = StandardContext::new();
     let mut parser = Parser::new(&contents);
     match parser.parse() {
         Ok(stmts) => {
-            stmts.as_slice().eval(&mut context)?;
+            Interpreter::new().interpret(&stmts[..])?;
         },
         Err(errors) => {
             for err in errors {

@@ -14,7 +14,7 @@ pub(super) struct Token<'a> {
 }
 
 #[derive(PartialEq, Debug, Clone, Copy)]
-pub(super) struct Position {
+pub struct Position {
     pub start: usize,
     pub end: usize,
     pub line: usize,

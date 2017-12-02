@@ -14,6 +14,10 @@ pub enum SyntaxError {
     InvalidAssignment,
     #[fail(display = "'break' outside loop")]
     BreakOutsideLoop,
+    #[fail(display = "Cannot have more than 8 arguments")]
+    TooManyArguments,
+    #[fail(display = "Cannot have more than 8 parameters")]
+    TooManyParameters,
 }
 
 pub type Result<T> = ::std::result::Result<T, SyntaxError>;

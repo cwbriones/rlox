@@ -25,6 +25,11 @@ impl PrettyPrinter {
         self.inner
     }
 
+    fn pop<'a>(&mut self) -> &mut Self {
+        self.inner.pop();
+        self
+    }
+
     fn push<'a, S>(&mut self, s: S) -> &mut Self where S: AsRef<str> {
         self.inner.push_str(s.as_ref());
         self
@@ -85,6 +90,21 @@ impl PrettyPrinter {
             Stmt::While(ref cond, ref body) => {
                 self.push("while (").push_expr(cond).push(") ").push_stmt(body, indent, true);
             },
+            Stmt::Function(ref fun) => {
+                self.push(&fun.name).push_char('(');
+                for param in &fun.parameters {
+                    self.push(param).push_char(',');
+                }
+                self.pop();
+                self.push_char('{');
+                for stmt in &fun.body {
+                    self.push_stmt(stmt, indent + indent_size, true);
+                }
+                self.newline(indent).push_char('}');
+            },
+            Stmt::Return(ref expr) => {
+                self.push("return ").push_expr(expr).push_char(';');
+            }
         }
     }
 
@@ -121,6 +141,7 @@ impl PrettyPrinter {
                     Value::False => { self.push("false"); },
                     Value::Nil => { self.push("nil"); },
                     Value::Void => { panic!("Obtained a literal of type 'Void'"); },
+                    Value::Function(_) => { panic!("Obtained a literal of type 'Function'"); },
                 }
             },
             Expr::Unary(ref unary) => {
@@ -132,7 +153,14 @@ impl PrettyPrinter {
             },
             Expr::Assign(ref var, ref expr) => {
                 self.push(var).push(" = ").push_expr(expr);
-            }
+            },
+            Expr::Call(ref call) => {
+                self.push_expr(&*call.callee).push_char(')');
+                for arg in &call.arguments {
+                    self.push_expr(arg).push_char(',');
+                }
+                self.pop();
+            },
         }
         self
     }

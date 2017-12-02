@@ -31,10 +31,13 @@ use self::ast::{Expr, Stmt};
 use self::scanner::Token;
 use self::scanner::TokenType;
 pub use self::scanner::Keyword;
+pub use self::scanner::Position;
 
 pub mod ast;
 pub mod errors;
 mod scanner;
+
+const MAX_NUM_PARAMETERS: usize = 8;
 
 pub struct Parser<'t> {
     scanner: Peekable<Scanner<'t>>,
@@ -123,11 +126,45 @@ impl<'t> Parser<'t> {
     // declaration → varDecl
     //             | statement ;
     fn declaration(&mut self) -> Result<Stmt> {
-        if let TokenType::Keyword(Keyword::Var) = self.peek_type()? {
-            self.advance()?;
-            return self.var_decl();
+        match self.peek_type()? {
+            TokenType::Keyword(Keyword::Var) => {
+                self.advance()?;
+                self.var_decl()
+            },
+            TokenType::Keyword(Keyword::Fun) => {
+                self.advance()?;
+                self.fun_decl()
+            },
+            _ => self.statement(),
         }
-        self.statement()
+    }
+
+    fn fun_decl(&mut self) -> Result<Stmt> {
+        // FIXME: These errors are weird.
+        let ident = self.expect(TokenType::Identifier, "Expect function name.")?;
+        self.expect(TokenType::LeftParen, "function name")?;
+        let mut parameters = Vec::new();
+        match self.peek_type()? {
+            TokenType::RightParen => {},
+            _ => {
+                let param = self.expect(TokenType::Identifier, "Expect parameters")?;
+                loop {
+                    parameters.push(param.value.into());
+                    if parameters.len() > MAX_NUM_PARAMETERS {
+                        // FIXME: This shouldn't stop parsing the function
+                        return Err(SyntaxError::TooManyParameters);
+                    }
+                    match self.peek_type()? {
+                        TokenType::Comma => {},
+                        _ => break,
+                    }
+                }
+            },
+        }
+        self.expect(TokenType::RightParen, "function parameters")?;
+        self.expect(TokenType::LeftBrace, "function parameters")?;
+        let block = self.block()?;
+        Ok(Stmt::function(ident.value.into(), parameters, block))
     }
 
     // varDecl → "var" IDENTIFIER ( "=" expression )? ";" ;
@@ -156,6 +193,10 @@ impl<'t> Parser<'t> {
                 self.advance()?;
                 self.print_statement()
             },
+            TokenType::Keyword(Keyword::Return) => {
+                self.advance()?;
+                self.return_statement()
+            },
             TokenType::Keyword(Keyword::If) => {
                 self.advance()?;
                 self.if_statement()
@@ -174,7 +215,7 @@ impl<'t> Parser<'t> {
             },
             TokenType::LeftBrace => {
                 self.advance()?;
-                self.block()
+                self.block().map(Stmt::Block)
             },
             _ => self.expression_statement()
         }
@@ -184,6 +225,16 @@ impl<'t> Parser<'t> {
         let value = self.expression()?;
         self.expect(TokenType::Semicolon, "value")?;
         Ok(Stmt::Print(value))
+    }
+
+    fn return_statement(&mut self) -> Result<Stmt> {
+        let expr = if let TokenType::Semicolon = self.peek_type()? {
+            Expr::Literal(Value::Nil)
+        } else {
+            self.expression()?
+        };
+        self.expect(TokenType::Semicolon, "return")?;
+        Ok(Stmt::Return(expr))
     }
 
     fn if_statement(&mut self) -> Result<Stmt> {
@@ -256,12 +307,12 @@ impl<'t> Parser<'t> {
     }
 
     // block  → '{' declaration * '}'
-    fn block(&mut self) -> Result<Stmt> {
+    fn block(&mut self) -> Result<Vec<Stmt>> {
         let mut block = Vec::new();
         loop {
             if let TokenType::RightBrace = self.peek_type()? {
                 self.advance()?;
-                return Ok(Stmt::Block(block));
+                return Ok(block);
             }
             let stmt = self.declaration()?;
             block.push(stmt);
@@ -328,8 +379,42 @@ impl<'t> Parser<'t> {
 
                 Ok(Expr::unary(operator, unary))
             }
-            _ => self.primary()
+            _ => self.call()
         }
+    }
+
+    fn call(&mut self) -> Result<Expr> {
+        let mut expr = self.primary()?;
+        while let TokenType::LeftParen = self.peek_type()? {
+            self.advance()?;
+            expr = self.finish_call(expr)?;
+        }
+        Ok(expr)
+    }
+
+    fn finish_call(&mut self, callee: Expr) -> Result<Expr> {
+        let mut arguments = Vec::new();
+        match self.peek_type()? {
+            TokenType::RightParen => {},
+            _ => {
+                loop {
+                    // FIXME: This shouldn't stop parsing the call
+                    if arguments.len() > MAX_NUM_PARAMETERS {
+                        return Err(SyntaxError::TooManyArguments);
+                    }
+                    arguments.push(self.expression()?);
+                    match self.peek_type()? {
+                        TokenType::Comma => {
+                            self.advance()?;
+                        },
+                        _ => break,
+                    }
+                }
+            },
+        }
+
+        let paren = self.expect(TokenType::RightParen, "arguments")?;
+        Ok(Expr::call(callee, paren.position, arguments))
     }
 
     // primary    → NUMBER | STRING | "false" | "true" | "nil"
@@ -598,5 +683,38 @@ mod tests {
             SyntaxError::BreakOutsideLoop => {},
             _ => panic!("Expected BreakOutsideLoop, got: {:?}", err),
         }
+    }
+
+    #[test]
+    fn call() {
+        let prog = r#"
+        call();
+        call(nil, 1, "two");
+        call(nested_one(nested_two(3)));
+        call(1)(2)("three");
+        "#;
+
+        let mut parser = Parser::new(prog);
+        parser.parse().unwrap();
+    }
+
+    #[test]
+    fn function() {
+        let prog = r#"
+            fun hello() {
+                print "hello";
+            }
+
+            fun increment(a) {
+                a + 1;
+            }
+
+            fun increment(a) {
+                return 1;
+            }
+        "#;
+
+        let mut parser = Parser::new(prog);
+        parser.parse().unwrap();
     }
 }

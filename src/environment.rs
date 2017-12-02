@@ -27,10 +27,6 @@ impl EnvNode {
     fn lookup(&self, key: &str) -> Option<Rc<Value>> {
         self.map.get(key).map(Clone::clone)
     }
-
-    fn parent(&self) -> Option<Rc<RefCell<EnvNode>>> {
-        self.parent.clone()
-    }
 }
 
 #[derive(Clone)]
@@ -53,7 +49,7 @@ impl Environment {
                 let bn = n.borrow();
                 match bn.lookup(key) {
                     s@Some(_) => return s.clone(),
-                    None      => next = bn.parent()
+                    None      => next = bn.parent.clone(),
                 }
             }
             if next.is_none() {
@@ -79,7 +75,7 @@ impl Environment {
                     bn.map.insert(key.into(), Rc::new(value));
                     return true;
                 }
-                next = bn.parent()
+                next = bn.parent.clone();
             }
             if next.is_none() {
                 return false;
@@ -93,11 +89,6 @@ impl Environment {
             EnvNode::with_parent(self.node.clone())
         ));
         Environment { node }
-    }
-
-    pub fn parent(&self) -> Option<Self> {
-        let node = self.node.borrow();
-        node.parent().map(|rc| Environment { node: rc })
     }
 }
 

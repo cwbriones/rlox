@@ -1,0 +1,45 @@
+// Simple function
+fun hello(name) {
+    print "hello " + name;
+}
+hello("world");
+
+// Recursive function
+fun fib(n) {
+    if (n < 2) {
+        return 1;
+    } else {
+        return fib(n - 1) + fib(n - 2);
+    }
+}
+print fib(9);
+
+// Closures
+var total = "global";
+fun incrementer(n) {
+    var total = 0;
+    fun inc() {
+        total = total + n;
+        return total;
+    }
+    return inc;
+}
+
+var inc = incrementer(3);
+print inc();
+print inc();
+print inc();
+
+print total;
+
+// Nested functions
+fun a(one) {
+    fun b(two) {
+        fun c(three) {
+            return one + " " + two + " " + three;
+        }
+        return c;
+    }
+    return b;
+}
+print a("nested")("function")("calls");

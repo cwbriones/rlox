@@ -1,7 +1,7 @@
 use rustyline;
 use rustyline::error::ReadlineError;
 
-use eval::{Eval, StandardContext};
+use eval::Interpreter;
 use failure::Error;
 use value::Value;
 use parser::Parser;
@@ -10,16 +10,17 @@ const PROMPT: &str = "rlox> ";
 const BLOCK_PROMPT: &str = "    > ";
 
 pub struct Repl {
-    editor: rustyline::Editor<()>, context: StandardContext,
+    editor: rustyline::Editor<()>,
+    interpreter: Interpreter,
 }
 
 impl Repl {
     pub fn new() -> Self {
         let editor = rustyline::Editor::<()>::new();
-        let context = StandardContext::new();
+        let interpreter = Interpreter::new();
         Repl {
             editor,
-            context
+            interpreter,
         }
     }
 
@@ -70,13 +71,12 @@ impl Repl {
 
     fn eval(&mut self, line: &str) -> Result<Value, Error> {
         let mut parser = Parser::new(line);
-        let ctx = &mut self.context;
         if line.ends_with('}') || line.ends_with(';') {
             let stmt = parser.parse_statement()?;
-            stmt.eval(ctx).map_err(Into::into)
+            self.interpreter.interpret(stmt).map_err(Into::into)
         } else {
             let expr = parser.expression()?;
-            expr.eval(ctx).map_err(Into::into)
+            self.interpreter.interpret(expr).map_err(Into::into)
         }
     }
 

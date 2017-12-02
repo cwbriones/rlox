@@ -1,4 +1,6 @@
 use value::Value;
+use super::Position;
+use std::rc::Rc;
 
 #[cfg(test)]
 pub mod dsl {
@@ -55,6 +57,15 @@ pub enum Stmt {
     If(Expr, Box<Stmt>, Option<Box<Stmt>>),
     While(Expr, Box<Stmt>),
     Break,
+    Function(Rc<FunctionDecl>),
+    Return(Expr),
+}
+
+#[derive(PartialEq, Debug)]
+pub struct FunctionDecl {
+    pub name: String,
+    pub parameters: Vec<String>,
+    pub body: Vec<Stmt>,
 }
 
 impl Stmt {
@@ -65,12 +76,21 @@ impl Stmt {
     pub(super) fn if_else_stmt(cond: Expr, then_clause: Stmt, else_clause: Stmt) -> Self {
         Stmt::If(cond, Box::new(then_clause), Some(Box::new(else_clause)))
     }
+
+    pub(super) fn function(name: &str, parameters: Vec<String>, body: Vec<Stmt>) -> Stmt {
+        Stmt::Function(Rc::new(FunctionDecl {
+            name: name.into(),
+            parameters,
+            body,
+        }))
+    }
 }
 
 #[derive(PartialEq, Debug)]
 pub enum Expr {
     Logical(Logical),
     Binary(Binary),
+    Call(Call),
     Grouping(Box<Expr>),
     Literal(Value),
     Unary(Unary),
@@ -79,6 +99,14 @@ pub enum Expr {
 }
 
 impl Expr {
+    pub fn call(callee: Expr, position: Position, arguments: Vec<Expr>) -> Expr {
+        Expr::Call(Call{
+            callee: Box::new(callee),
+            position: position,
+            arguments: arguments,
+        })
+    }
+
     pub(super) fn binary(operator: BinaryOperator, lhs: Expr, rhs: Expr) -> Self {
         Expr::Binary(Binary {
             lhs: Box::new(lhs),
@@ -139,6 +167,13 @@ impl BinaryOperator {
             BinaryOperator::Star => "*",
         }
     }
+}
+
+#[derive(PartialEq, Debug)]
+pub struct Call {
+    pub callee: Box<Expr>,
+    pub position: Position,
+    pub arguments: Vec<Expr>,
 }
 
 #[derive(PartialEq, Debug)]

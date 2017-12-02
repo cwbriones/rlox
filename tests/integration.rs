@@ -54,3 +54,4 @@ define_test!(logical_operators);
 define_test!(loop_break);
 
 define_test!(divide_by_zero);
+define_test!(functions);
