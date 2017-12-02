@@ -141,7 +141,7 @@ impl PrettyPrinter {
                     Value::False => { self.push("false"); },
                     Value::Nil => { self.push("nil"); },
                     Value::Void => { panic!("Obtained a literal of type 'Void'"); },
-                    Value::Function(_) => { panic!("Obtained a literal of type 'Function'"); },
+                    Value::Callable(_) => { panic!("Obtained a literal of type 'Callable'"); },
                 }
             },
             Expr::Unary(ref unary) => {

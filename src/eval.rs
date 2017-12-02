@@ -1,7 +1,6 @@
 use environment::Environment;
-use parser::ast::{Expr,Stmt,Binary,Unary,UnaryOperator,BinaryOperator,Logical,LogicalOperator,Call};
-use value::Value;
-use value::LoxFunction;
+use parser::ast::*;
+use value::{Value, Callable};
 
 #[derive(Debug, Fail)]
 pub enum RuntimeError {
@@ -51,11 +50,15 @@ impl Interpreter {
         executable.eval(self, &mut globals)
     }
 
-    fn push_return(&mut self, value: Value) {
+    pub fn interpret_within<E: Eval>(&mut self, environment: &mut Environment, executable: E) -> Result<Value> {
+        executable.eval(self, environment)
+    }
+
+    pub fn push_return(&mut self, value: Value) {
         self.retvals.push(value);
     }
 
-    fn pop_return(&mut self) -> Value {
+    pub fn pop_return(&mut self) -> Value {
         self.retvals.pop().expect("return stack to be nonempty")
     }
 }
@@ -79,15 +82,14 @@ impl Eval for Stmt {
             },
             Stmt::Function(ref func_decl) => {
                 let name = &(**func_decl).name;
-                let func = Value::Function(LoxFunction::new(func_decl.clone(), env.clone()));
-                env.bind(name, func);
+                let callable = Callable::new_function(func_decl.clone(), env.clone());
+                let value = Value::Callable(callable);
+                env.bind(name, value);
             },
             Stmt::Block(ref stmts) => {
                 let mut enclosing = env.extend();
                 for stmt in stmts.iter() {
-                    if let Err(err) = stmt.eval(interpreter, &mut enclosing) {
-                        return Err(err);
-                    }
+                    stmt.eval(interpreter, &mut enclosing)?;
                 }
             },
             Stmt::If(ref cond, ref then_clause, ref else_clause) => {
@@ -180,30 +182,14 @@ impl Eval for Call {
             .iter()
             .map(|arg| arg.eval(interpreter, env))
             .collect::<Result<Vec<_>>>()?;
-        if let Value::Function(ref fun) = callee {
-            let decl = &fun.declaration;
-            if fun.arity() != args.len() {
+        if let Value::Callable(ref callable) = callee {
+            if callable.arity() != args.len() {
                 return Err(RuntimeError::BadArity {
                     got: args.len(),
-                    expected: fun.arity(),
+                    expected: callable.arity(),
                 });
             }
-            // Create new environment
-            let mut fun_env = fun.closure.extend();
-            for (p, a) in decl.parameters.iter().zip(args) {
-                fun_env.bind(p, a);
-            }
-            // Evaluate body
-            for stmt in &decl.body {
-                match stmt.eval(interpreter, &mut fun_env) {
-                    Err(RuntimeError::Return) => {
-                        let retval = interpreter.pop_return();
-                        return Ok(retval);
-                    },
-                    val => val
-                }?;
-            }
-            return Ok(Value::Nil)
+            return callable.call(interpreter, args);
         }
         Err(RuntimeError::InvalidCallee{line: self.position.line})
     }
