@@ -24,11 +24,17 @@ impl EnvNode {
         }
     }
 
-    fn lookup(&self, key: &str) -> Option<Rc<Value>> {
+    fn get(&self, key: &str) -> Option<Rc<Value>> {
         self.map.get(key).map(Clone::clone)
+    }
+
+    fn set(&mut self, key: &str, value: Value) -> bool {
+        self.map.insert(key.to_owned(), Rc::new(value)).is_some()
     }
 }
 
+// TODO: Add a wrapper environment that knows about globals for the interpreter
+// so that get/sets are uniform wrt the Variable type.
 #[derive(Clone)]
 pub struct Environment {
     node: Rc<RefCell<EnvNode>>,
@@ -37,23 +43,34 @@ pub struct Environment {
 #[derive(PartialEq, Debug)]
 pub struct Variable {
     name: String,
+    depth: Option<usize>,
 }
 
 impl Variable {
     pub fn new_global(name: &str) -> Self {
         Variable {
             name: name.to_owned(),
+            depth: None,
         }
     }
 
     pub fn new_local(name: &str) -> Self {
         Variable {
             name: name.to_owned(),
+            depth: Some(0),
         }
+    }
+
+    pub fn resolve(&mut self, depth: usize) {
+        self.depth = Some(depth);
     }
 
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    pub fn depth(&self) -> Option<usize> {
+        self.depth
     }
 }
 
@@ -63,48 +80,19 @@ impl Environment {
         Environment { node }
     }
 
-    pub fn lookup(&self, key: &str) -> Option<Rc<Value>> {
-        let mut node = Some(self.node.clone());
-
-        loop {
-            let mut next = None;
-            if let Some(ref n) = node {
-                let bn = n.borrow();
-                match bn.lookup(key) {
-                    s@Some(_) => return s.clone(),
-                    None      => next = bn.parent.clone(),
-                }
-            }
-            if next.is_none() {
-                return None;
-            }
-            node = next;
-        }
+    pub fn get_at(&self, key: &str, depth: usize) -> Option<Rc<Value>> {
+        self.ancestor(depth)
+            .and_then(|ancestor| ancestor.borrow().get(key).clone())
     }
 
-    pub fn bind(&mut self, key: &str, value: Value) {
-        let mut inner = self.node.borrow_mut();
-        inner.map.insert(key.into(), Rc::new(value));
+    pub fn set(&mut self, var: &Variable, value: Value) -> bool {
+        self.set_at(var.name(), value, 0)
     }
 
-    pub fn rebind(&mut self, key: &str, value: Value) -> bool {
-        let mut node = Some(self.node.clone());
-
-        loop {
-            let mut next = None;
-            if let Some(ref n) = node {
-                let mut bn = n.borrow_mut();
-                if bn.map.contains_key(key) {
-                    bn.map.insert(key.into(), Rc::new(value));
-                    return true;
-                }
-                next = bn.parent.clone();
-            }
-            if next.is_none() {
-                return false;
-            }
-            node = next;
-        }
+    pub fn set_at(&mut self, key: &str, value: Value, depth: usize) -> bool {
+        self.ancestor(depth)
+            .map(|ancestor| ancestor.borrow_mut().set(key, value))
+            .unwrap_or(false)
     }
 
     pub fn extend(&self) -> Self {
@@ -113,6 +101,24 @@ impl Environment {
         ));
         Environment { node }
     }
+
+    fn ancestor(&self, depth: usize) -> Option<Rc<RefCell<EnvNode>>> {
+        let mut node = Some(self.node.clone());
+
+        for _ in 0..depth {
+            // Temporary introduced to get around borrowck
+            let mut next = None;
+            if let Some(ref node) = node {
+                let bn = node.borrow();
+                next = bn.parent.clone();
+            }
+            if next.is_none() {
+                return None
+            }
+            node = next;
+        }
+        node
+    }
 }
 
 #[cfg(test)]
@@ -120,31 +126,53 @@ mod tests {
     use super::*;
 
     #[test]
-    fn basic_test() {
+    fn single_environment() {
         let mut env = Environment::new();
-        assert_eq!(None, env.lookup("a"));
-        env.bind("a", Value::True);
-        assert_eq!(Some(Rc::new(Value::True)), env.lookup("a"));
-        assert_eq!(None, env.lookup("b"));
+        assert_eq!(None, env.get_at("a", 0));
+        env.set_at("a", Value::True, 0);
+        assert_eq!(Some(Rc::new(Value::True)), env.get_at("a", 0));
+        assert_eq!(None, env.get_at("b", 0));
     }
 
     #[test]
-    fn scope() {
+    fn get_at() {
         let mut outer = Environment::new();
-        outer.bind("b", Value::Number(10.0));
-        outer.bind("c", Value::Number(3.0));
-
         let mut inner = outer.extend();
-        inner.bind("a", Value::Number(1.0));
-        inner.bind("b", Value::Number(2.0));
+        let mut inner2 = inner.extend();
 
-        // inner scope only
-        assert_eq!(Some(Rc::new(Value::Number(1.0))), inner.lookup("a"));
-        // outer scope only
-        assert_eq!(Some(Rc::new(Value::Number(3.0))), inner.lookup("c"));
-        // shadowed var
-        assert_eq!(Some(Rc::new(Value::Number(2.0))), inner.lookup("b"));
-        // neither
-        assert_eq!(None, inner.lookup("d"));
+        outer.set_at("a", Value::Nil, 0);
+        inner.set_at("a", Value::True, 0);
+        inner2.set_at("a", Value::False, 0);
+
+        assert_eq!(Some(Rc::new(Value::False)), inner2.get_at("a", 0));
+        assert_eq!(Some(Rc::new(Value::True)), inner2.get_at("a", 1));
+        assert_eq!(Some(Rc::new(Value::Nil)), inner2.get_at("a", 2));
+        assert_eq!(None, inner2.get_at("a", 3));
+
+        assert_eq!(Some(Rc::new(Value::True)), inner.get_at("a", 0));
+        assert_eq!(Some(Rc::new(Value::Nil)), inner.get_at("a", 1));
+        assert_eq!(None, inner.get_at("a", 2));
+
+        assert_eq!(Some(Rc::new(Value::Nil)), outer.get_at("a", 0));
+    }
+
+    #[test]
+    fn set_at() {
+        let mut outer = Environment::new();
+        let mut inner = outer.extend();
+        let mut inner2 = inner.extend();
+
+        outer.set_at("a", Value::Nil, 0);
+        inner.set_at("a", Value::True, 0);
+        inner2.set_at("a", Value::False, 0);
+
+        inner2.set_at("a", Value::Number(1.0), 2);
+        assert_eq!(Some(Rc::new(Value::Number(1.0))), outer.get_at("a", 0));
+
+        inner.set_at("a", Value::Number(2.0), 1);
+        assert_eq!(Some(Rc::new(Value::Number(2.0))), outer.get_at("a", 0));
+
+        inner2.set_at("b", Value::Number(3.0), 1);
+        assert_eq!(Some(Rc::new(Value::Number(3.0))), inner.get_at("b", 0));
     }
 }

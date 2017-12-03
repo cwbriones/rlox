@@ -52,6 +52,7 @@ define_test!(for_loop);
 define_test!(fibonacci);
 define_test!(logical_operators);
 define_test!(loop_break);
+define_test!(functions);
+define_test!(resolving);
 
 define_test!(divide_by_zero);
-define_test!(functions);

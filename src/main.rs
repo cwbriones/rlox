@@ -21,6 +21,7 @@ mod eval;
 mod value;
 mod repl;
 mod pretty_printer;
+mod resolver;
 
 fn main() {
     env_logger::init().expect("Failed to initialize logger");
@@ -78,7 +79,11 @@ fn execute(filename: &str) -> Result<(), failure::Error> {
     file.read_to_string(&mut contents)?;
     let mut parser = Parser::new(&contents);
     match parser.parse() {
-        Ok(stmts) => {
+        Ok(mut stmts) => {
+            let mut resolver = resolver::Resolver::new();
+            debug!("--------------- Resolution ----------------");
+            resolver.resolve(&mut stmts)?;
+            debug!("--------------- Execution  ----------------");
             Interpreter::new().interpret(&stmts[..])?;
         },
         Err(errors) => {

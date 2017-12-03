@@ -1,6 +1,8 @@
-use environment::Environment;
+use environment::{Variable, Environment};
 use parser::ast::*;
 use value::{Value, Callable};
+
+use std::rc::Rc;
 
 #[derive(Debug, Fail)]
 pub enum RuntimeError {
@@ -61,6 +63,20 @@ impl Interpreter {
     pub fn pop_return(&mut self) -> Value {
         self.retvals.pop().expect("return stack to be nonempty")
     }
+
+    pub fn lookup(&self, env: &Environment, var: &Variable) -> Option<Rc<Value>> {
+        if let Some(depth) = var.depth() {
+            return env.get_at(var.name(), depth);
+        }
+        self.globals.get_at(var.name(), 0)
+    }
+
+    pub fn assign(&mut self, env: &mut Environment, var: &Variable, val: Value) -> bool {
+        if let Some(depth) = var.depth() {
+            return env.set_at(var.name(), val, depth);
+        }
+        self.globals.set_at(var.name(), val, 0)
+    }
 }
 
 pub trait Eval {
@@ -78,13 +94,13 @@ impl Eval for Stmt {
             Stmt::Var(ref var, ref expr) => {
                 let val = expr.eval(interpreter, env)?;
                 debug!("Set var '{:?}' to value {}", var, val);
-                env.bind(var.name(), val);
+                interpreter.assign(env, var, val);
             },
             Stmt::Function(ref decl) => {
                 let callable = Callable::new_function(decl.clone(), env.clone());
-                let value = Value::Callable(callable);
+                let val = Value::Callable(callable);
                 let decl = decl.borrow();
-                env.bind(decl.var.name(), value);
+                interpreter.assign(env, &decl.var, val);
             },
             Stmt::Block(ref stmts) => {
                 let mut enclosing = env.extend();
@@ -127,9 +143,8 @@ impl Eval for Expr {
             Expr::Unary(ref inner) => inner.eval(interpreter, env),
             Expr::Literal(ref inner) => inner.eval(interpreter, env),
             Expr::Var(ref var) => {
-                let name = var.name();
-                match env.lookup(name) {
-                    None => return Err(RuntimeError::UndefinedVariable(name.to_owned())),
+                match interpreter.lookup(env, var) {
+                    None => return Err(RuntimeError::UndefinedVariable(var.name().into())),
                     Some(v) => {
                         return Ok((*v).clone())
                     }
@@ -137,11 +152,10 @@ impl Eval for Expr {
             },
             Expr::Assign(ref var, ref lhs) => {
                 let lhs = lhs.eval(interpreter, env)?;
-                let name = var.name();
-                if env.rebind(name, lhs.clone()) {
+                if interpreter.assign(env, var, lhs.clone()) {
                     Ok(lhs)
                 } else {
-                    Err(RuntimeError::UndefinedVariable(name.to_owned()))
+                    Err(RuntimeError::UndefinedVariable(var.name().into()))
                 }
             },
             Expr::Call(ref inner) => inner.eval(interpreter, env),

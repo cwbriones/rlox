@@ -62,7 +62,7 @@ impl LoxFunction {
         // Create new environment
         let mut env = self.closure.extend();
         for (p, a) in decl.parameters.iter().zip(arguments) {
-            env.bind(p.name(), a);
+            env.set(p, a);
         }
         // Evaluate body
         match interpreter.interpret_within(&mut env, decl.body.as_slice()) {
