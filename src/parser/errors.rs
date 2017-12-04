@@ -12,8 +12,6 @@ pub enum SyntaxError {
     PrimaryFailure,
     #[fail(display = "invalid assignment target")]
     InvalidAssignment,
-    #[fail(display = "'break' outside loop")]
-    BreakOutsideLoop,
     #[fail(display = "Cannot have more than 8 arguments")]
     TooManyArguments,
     #[fail(display = "Cannot have more than 8 parameters")]

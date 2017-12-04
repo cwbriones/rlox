@@ -42,7 +42,6 @@ const MAX_NUM_PARAMETERS: usize = 8;
 
 pub struct Parser<'t> {
     scanner: Peekable<Scanner<'t>>,
-    loop_count: usize,
 }
 
 // Encapsulates rules with the following form:
@@ -94,7 +93,6 @@ impl<'t> Parser<'t> {
         let scanner = Scanner::new(program);
         Parser {
             scanner: scanner.peekable(),
-            loop_count: 0,
         }
     }
 
@@ -210,9 +208,6 @@ impl<'t> Parser<'t> {
             TokenType::Keyword(Keyword::Break) => {
                 self.advance()?;
                 self.expect(TokenType::Semicolon, "Expected ';' after break")?;
-                if self.loop_count == 0 {
-                    return Err(SyntaxError::BreakOutsideLoop);
-                }
                 Ok(Stmt::Break)
             },
             TokenType::LeftBrace => {
@@ -257,9 +252,7 @@ impl<'t> Parser<'t> {
         self.expect(TokenType::LeftParen, "while")?;
         let cond = self.expression()?;
         self.expect(TokenType::RightParen, "while condition")?;
-        self.loop_count += 1;
         let body = self.statement()?;
-        self.loop_count -= 1;
 		Ok(Stmt::While(cond, Box::new(body)))
     }
 
@@ -289,9 +282,7 @@ impl<'t> Parser<'t> {
         };
         self.expect(TokenType::RightParen, "for clause")?;
 
-        self.loop_count += 1;
         let mut body = self.statement()?;
-        self.loop_count -= 1;
 
         // Desugar into while loop
         body = match increment {
@@ -509,8 +500,6 @@ mod tests {
     use super::ast::{UnaryOperator,BinaryOperator,Stmt};
     use super::ast::dsl::*;
 
-    use super::errors::SyntaxError;
-
     #[test]
     fn expression() {
         let expressions = [
@@ -672,20 +661,6 @@ mod tests {
                 Box::new(Stmt::Block(vec![Stmt::Break]))
             )
         ], statements);
-    }
-
-    #[test]
-    fn break_outside_loop() {
-        let prog = r#"
-            break;
-        "#;
-
-        let mut parser = Parser::new(prog);
-        let err = parser.parse_statement().unwrap_err();
-        match err {
-            SyntaxError::BreakOutsideLoop => {},
-            _ => panic!("Expected BreakOutsideLoop, got: {:?}", err),
-        }
     }
 
     #[test]

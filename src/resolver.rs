@@ -5,10 +5,12 @@ use std::cell::RefCell;
 use parser::ast::*;
 use environment::Variable;
 
-#[derive(Debug, Fail)]
+#[derive(Debug, Fail, PartialEq)]
 pub enum ResolveError {
     #[fail(display =  "'return' outside function")]
     ReturnOutsideFunction,
+    #[fail(display =  "'break' outside loop")]
+    BreakOutsideLoop,
     #[fail(display = "Cannot read local variable in its own initializer")]
     InitializerSelfReference,
     #[fail(display = "Variable with this name already declared in this scope")]
@@ -18,6 +20,7 @@ pub enum ResolveError {
 pub struct Resolver {
     scopes: Vec<HashMap<String, bool>>,
     function: Option<Rc<RefCell<FunctionDecl>>>,
+    loop_depth: usize,
 }
 
 type Result = ::std::result::Result<(), ResolveError>;
@@ -27,6 +30,7 @@ impl Resolver {
         Resolver {
             scopes: vec![HashMap::new()],
             function: None,
+            loop_depth: 0,
         }
     }
 
@@ -84,9 +88,15 @@ impl Resolver {
             },
 			Stmt::While(ref mut cond, ref mut body) => {
                 self.resolve_expr(cond)?;
+                self.loop_depth += 1;
                 self.resolve_stmt(body)?;
+                self.loop_depth -= 1;
             },
-            Stmt::Break => {},
+            Stmt::Break => {
+                if self.loop_depth == 0 {
+                    return Err(ResolveError::BreakOutsideLoop);
+                }
+            },
             Stmt::Return(ref mut expr) => {
                 if self.function.is_none() {
                     return Err(ResolveError::ReturnOutsideFunction);
@@ -180,5 +190,23 @@ impl Resolver {
     fn end_scope(&mut self) {
         debug!("END SCOPE");
         self.scopes.pop().expect("scopes stack to be nonempty");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use parser::Parser;
+
+    #[test]
+    fn break_outside_loop() {
+        let prog = "break;";
+        let err  = parse_and_resolve(prog).unwrap_err();
+        assert_eq!(err, ResolveError::BreakOutsideLoop);
+    }
+
+    fn parse_and_resolve(prog: &str) -> Result {
+        let mut stmts = Parser::new(prog).parse().unwrap();
+        Resolver::new().resolve(&mut stmts)
     }
 }
