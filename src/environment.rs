@@ -34,6 +34,29 @@ pub struct Environment {
     node: Rc<RefCell<EnvNode>>,
 }
 
+#[derive(PartialEq, Debug)]
+pub struct Variable {
+    name: String,
+}
+
+impl Variable {
+    pub fn new_global(name: &str) -> Self {
+        Variable {
+            name: name.to_owned(),
+        }
+    }
+
+    pub fn new_local(name: &str) -> Self {
+        Variable {
+            name: name.to_owned(),
+        }
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+}
+
 impl Environment {
     pub fn new() -> Self {
         let node = Rc::new(RefCell::new(EnvNode::new()));

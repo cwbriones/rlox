@@ -77,14 +77,14 @@ impl Eval for Stmt {
             },
             Stmt::Var(ref var, ref expr) => {
                 let val = expr.eval(interpreter, env)?;
-                debug!("Set var '{}' to value {}", var, val);
-                env.bind(var, val);
+                debug!("Set var '{:?}' to value {}", var, val);
+                env.bind(var.name(), val);
             },
-            Stmt::Function(ref func_decl) => {
-                let name = &(**func_decl).name;
-                let callable = Callable::new_function(func_decl.clone(), env.clone());
+            Stmt::Function(ref decl) => {
+                let callable = Callable::new_function(decl.clone(), env.clone());
                 let value = Value::Callable(callable);
-                env.bind(name, value);
+                let decl = decl.borrow();
+                env.bind(decl.var.name(), value);
             },
             Stmt::Block(ref stmts) => {
                 let mut enclosing = env.extend();
@@ -127,8 +127,9 @@ impl Eval for Expr {
             Expr::Unary(ref inner) => inner.eval(interpreter, env),
             Expr::Literal(ref inner) => inner.eval(interpreter, env),
             Expr::Var(ref var) => {
-                match env.lookup(var) {
-                    None => return Err(RuntimeError::UndefinedVariable(var.clone())),
+                let name = var.name();
+                match env.lookup(name) {
+                    None => return Err(RuntimeError::UndefinedVariable(name.to_owned())),
                     Some(v) => {
                         return Ok((*v).clone())
                     }
@@ -136,10 +137,11 @@ impl Eval for Expr {
             },
             Expr::Assign(ref var, ref lhs) => {
                 let lhs = lhs.eval(interpreter, env)?;
-                if env.rebind(var, lhs.clone()) {
+                let name = var.name();
+                if env.rebind(name, lhs.clone()) {
                     Ok(lhs)
                 } else {
-                    Err(RuntimeError::UndefinedVariable(var.clone()))
+                    Err(RuntimeError::UndefinedVariable(name.to_owned()))
                 }
             },
             Expr::Call(ref inner) => inner.eval(interpreter, env),

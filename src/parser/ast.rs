@@ -1,6 +1,9 @@
 use value::Value;
 use super::Position;
 use std::rc::Rc;
+use std::cell::RefCell;
+
+use environment::Variable;
 
 #[cfg(test)]
 pub mod dsl {
@@ -44,7 +47,11 @@ pub mod dsl {
     }
 
     pub fn var(name: &str) -> Expr {
-        Expr::Var(name.into())
+        Expr::Var(Variable::new_global(name))
+    }
+
+    pub fn assign(name: &str, assignment: Expr) -> Expr {
+        Expr::Assign(Variable::new_global(name), Box::new(assignment))
     }
 }
 
@@ -52,23 +59,30 @@ pub mod dsl {
 pub enum Stmt {
     Expr(Expr),
     Print(Expr),
-    Var(String, Expr),
+    Var(Variable, Expr),
     Block(Vec<Stmt>),
     If(Expr, Box<Stmt>, Option<Box<Stmt>>),
     While(Expr, Box<Stmt>),
     Break,
-    Function(Rc<FunctionDecl>),
+    Function(Rc<RefCell<FunctionDecl>>),
     Return(Expr),
 }
 
 #[derive(PartialEq, Debug)]
 pub struct FunctionDecl {
-    pub name: String,
-    pub parameters: Vec<String>,
+    pub var: Variable,
+    pub parameters: Vec<Variable>,
     pub body: Vec<Stmt>,
 }
 
 impl Stmt {
+    pub(super) fn var(name: &str, initializer: Expr) -> Self {
+        Stmt::Var(
+            Variable::new_global(name),
+            initializer
+        )
+    }
+
     pub(super) fn if_stmt(cond: Expr, then_clause: Stmt) -> Self {
         Stmt::If(cond, Box::new(then_clause), None)
     }
@@ -77,12 +91,13 @@ impl Stmt {
         Stmt::If(cond, Box::new(then_clause), Some(Box::new(else_clause)))
     }
 
-    pub(super) fn function(name: &str, parameters: Vec<String>, body: Vec<Stmt>) -> Stmt {
-        Stmt::Function(Rc::new(FunctionDecl {
-            name: name.into(),
+    pub(super) fn function(name: &str, parameters: Vec<Variable>, body: Vec<Stmt>) -> Stmt {
+        let var = Variable::new_local(name.into());
+        Stmt::Function(Rc::new(RefCell::new(FunctionDecl {
+            var,
             parameters,
             body,
-        }))
+        })))
     }
 }
 
@@ -94,8 +109,8 @@ pub enum Expr {
     Grouping(Box<Expr>),
     Literal(Value),
     Unary(Unary),
-    Var(String),
-    Assign(String, Box<Expr>),
+    Var(Variable),
+    Assign(Variable, Box<Expr>),
 }
 
 impl Expr {

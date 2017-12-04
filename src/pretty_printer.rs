@@ -53,7 +53,7 @@ impl PrettyPrinter {
                 self.push("print ").push_expr(expr).push_char(';');
             },
             Stmt::Var(ref var, ref expr) => {
-                self.push("var ").push(var).push(" = ").push_expr(expr).push_char(';');
+                self.push("var ").push(var.name()).push(" = ").push_expr(expr).push_char(';');
             },
             Stmt::Block(ref stmts) => {
                 self.push_char('{');
@@ -90,14 +90,15 @@ impl PrettyPrinter {
             Stmt::While(ref cond, ref body) => {
                 self.push("while (").push_expr(cond).push(") ").push_stmt(body, indent, true);
             },
-            Stmt::Function(ref fun) => {
-                self.push(&fun.name).push_char('(');
-                for param in &fun.parameters {
-                    self.push(param).push_char(',');
+            Stmt::Function(ref decl) => {
+                let decl = decl.borrow();
+                self.push(decl.var.name()).push_char('(');
+                for param in &decl.parameters {
+                    self.push(param.name()).push_char(',');
                 }
                 self.pop();
                 self.push_char('{');
-                for stmt in &fun.body {
+                for stmt in &decl.body {
                     self.push_stmt(stmt, indent + indent_size, true);
                 }
                 self.newline(indent).push_char('}');
@@ -149,10 +150,10 @@ impl PrettyPrinter {
                 self.push(op.to_str()).push_expr(&*unary.unary);
             },
             Expr::Var(ref var) => {
-                self.push(var);
+                self.push(var.name());
             },
             Expr::Assign(ref var, ref expr) => {
-                self.push(var).push(" = ").push_expr(expr);
+                self.push(var.name()).push(" = ").push_expr(expr);
             },
             Expr::Call(ref call) => {
                 self.push_expr(&*call.callee).push_char(')');

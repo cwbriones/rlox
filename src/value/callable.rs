@@ -1,5 +1,6 @@
 use std::fmt::Debug;
 use std::rc::Rc;
+use std::cell::RefCell;
 
 use value::Value;
 use environment::Environment;
@@ -14,7 +15,7 @@ pub enum Callable {
 }
 
 impl Callable {
-    pub fn new_function(declaration: Rc<FunctionDecl>, env: Environment) -> Self {
+    pub fn new_function(declaration: Rc<RefCell<FunctionDecl>>, env: Environment) -> Self {
         Callable::Function(LoxFunction::new(declaration, env))
     }
 
@@ -35,7 +36,8 @@ impl Debug for Callable {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
         match *self {
             Callable::Function(ref fun) => {
-                write!(f, "<fn {}>", (*fun.declaration).name)
+                let decl = fun.declaration.borrow();
+                write!(f, "<fn {}>", decl.var.name())
             }
         }
     }
@@ -43,12 +45,12 @@ impl Debug for Callable {
 
 #[derive(Clone)]
 pub struct LoxFunction {
-    declaration: Rc<FunctionDecl>,
+    declaration: Rc<RefCell<FunctionDecl>>,
     closure: Environment,
 }
 
 impl LoxFunction {
-    fn new(declaration: Rc<FunctionDecl>, closure: Environment) -> Self {
+    fn new(declaration: Rc<RefCell<FunctionDecl>>, closure: Environment) -> Self {
         LoxFunction {
             declaration,
             closure,
@@ -56,11 +58,11 @@ impl LoxFunction {
     }
 
     fn call(&self, interpreter: &mut Interpreter, arguments: Vec<Value>) -> Result<Value, RuntimeError> {
-        let decl = &self.declaration;
+        let decl = &self.declaration.borrow();
         // Create new environment
         let mut env = self.closure.extend();
         for (p, a) in decl.parameters.iter().zip(arguments) {
-            env.bind(p, a);
+            env.bind(p.name(), a);
         }
         // Evaluate body
         match interpreter.interpret_within(&mut env, decl.body.as_slice()) {
@@ -72,9 +74,9 @@ impl LoxFunction {
         }?;
         return Ok(Value::Nil)
     }
- 
+
     fn arity(&self) -> usize {
-        self.declaration.parameters.len()
+        self.declaration.borrow().parameters.len()
     }
 }
 

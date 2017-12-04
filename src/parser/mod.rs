@@ -25,6 +25,7 @@ use std::iter::Peekable;
 
 use self::errors::*;
 use value::Value;
+use environment::Variable;
 use self::scanner::Scanner;
 use self::ast::{Expr, Stmt};
 
@@ -149,7 +150,7 @@ impl<'t> Parser<'t> {
             _ => {
                 let param = self.expect(TokenType::Identifier, "Expect parameters")?;
                 loop {
-                    parameters.push(param.value.into());
+                    parameters.push(Variable::new_global(param.value.into()));
                     if parameters.len() > MAX_NUM_PARAMETERS {
                         // FIXME: This shouldn't stop parsing the function
                         return Err(SyntaxError::TooManyParameters);
@@ -164,7 +165,7 @@ impl<'t> Parser<'t> {
         self.expect(TokenType::RightParen, "function parameters")?;
         self.expect(TokenType::LeftBrace, "function parameters")?;
         let block = self.block()?;
-        Ok(Stmt::function(ident.value.into(), parameters, block))
+        Ok(Stmt::function(ident.value, parameters, block))
     }
 
     // varDecl → "var" IDENTIFIER ( "=" expression )? ";" ;
@@ -176,7 +177,8 @@ impl<'t> Parser<'t> {
             initializer = self.expression()?;
         }
         self.expect(TokenType::Semicolon, "variable declaration")?;
-        Ok(Stmt::Var(ident.value.into(), initializer))
+        let var = Variable::new_global(ident.value.into());
+        Ok(Stmt::Var(var, initializer))
     }
 
     // statement  → exprStmt
@@ -344,8 +346,8 @@ impl<'t> Parser<'t> {
         if let TokenType::Equal = self.peek_type()? {
             self.advance()?;
             let value = self.assignment()?;
-            if let Expr::Var(name) = expr {
-                return Ok(Expr::Assign(name, Box::new(value)));
+            if let Expr::Var(var) = expr {
+                return Ok(Expr::Assign(var, Box::new(value)));
             }
             return Err(SyntaxError::InvalidAssignment);
         }
@@ -451,7 +453,8 @@ impl<'t> Parser<'t> {
             },
             TokenType::Identifier => {
                 let token = self.advance()?;
-                Ok(Expr::Var(token.value.into()))
+                let var = Variable::new_global(token.value.into());
+                Ok(Expr::Var(var))
             },
             _ => Err(SyntaxError::PrimaryFailure)
         }
@@ -503,7 +506,7 @@ impl<'t> Parser<'t> {
 #[cfg(test)]
 mod tests {
     use super::Parser;
-    use super::ast::{UnaryOperator,BinaryOperator,Stmt,Expr};
+    use super::ast::{UnaryOperator,BinaryOperator,Stmt};
     use super::ast::dsl::*;
 
     use super::errors::SyntaxError;
@@ -555,9 +558,9 @@ mod tests {
         let mut parser = Parser::new(prog);
         let statements = parser.parse().unwrap();
         assert_eq!(vec![
-            Stmt::Var("a".into(), nil()),
-            Stmt::Var("b".into(), binary(BinaryOperator::Plus, number(1.0), number(1.0))),
-            Stmt::Expr(Expr::Assign("a".into(), Box::new(number(1.0))))
+            Stmt::var("a", nil()),
+            Stmt::var("b", binary(BinaryOperator::Plus, number(1.0), number(1.0))),
+            Stmt::Expr(assign("a", number(1.0)))
         ], statements);
     }
 
@@ -574,8 +577,8 @@ mod tests {
         let statements = parser.parse().unwrap();
         assert_eq!(vec![
             Stmt::Block(vec![
-                Stmt::Var("a".into(), number(1.0)),
-                Stmt::Print(Expr::Var("a".into())),
+                Stmt::var("a", number(1.0)),
+                Stmt::Print(var("a")),
             ])
         ], statements);
     }
@@ -590,8 +593,8 @@ mod tests {
         let mut parser = Parser::new(prog);
         let statements = parser.parse().unwrap();
         assert_eq!(vec![
-            Stmt::Var("a".into(), nil()),
-            Stmt::Var("b".into(), binary(BinaryOperator::Plus, number(1.0), number(1.0)))
+            Stmt::var("a", nil()),
+            Stmt::var("b", binary(BinaryOperator::Plus, number(1.0), number(1.0)))
         ], statements);
     }
 
@@ -645,7 +648,7 @@ mod tests {
         let statements = parser.parse().unwrap();
         assert_eq!(vec![
             Stmt::While(
-                binary(BinaryOperator::GreaterThan, var("a".into()), number(1.0)),
+                binary(BinaryOperator::GreaterThan, var("a"), number(1.0)),
                 Box::new(Stmt::Block(vec![
                     Stmt::Print(string("body"))
                 ]))
