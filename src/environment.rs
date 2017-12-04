@@ -40,6 +40,14 @@ pub struct Environment {
     node: Rc<RefCell<EnvNode>>,
 }
 
+impl PartialEq for Environment {
+    fn eq(&self, other: &Self) -> bool {
+        let ptr = &*self.node as *const _;
+        let other_ptr = &*other.node as *const _;
+        ptr == other_ptr
+    }
+}
+
 #[derive(PartialEq, Debug)]
 pub struct Variable {
     name: String,

@@ -243,7 +243,8 @@ impl Eval for Binary {
             BinaryOperator::GreaterThanEq => comparison_op!(>=, lhs, rhs),
             BinaryOperator::LessThan => comparison_op!(<, lhs, rhs),
             BinaryOperator::LessThanEq => comparison_op!(<=, lhs, rhs),
-            _ => unimplemented!("==, !="),
+            BinaryOperator::Equal => Ok((lhs == rhs).into()),
+            BinaryOperator::BangEq => Ok((lhs != rhs).into()),
         }
     }
 }

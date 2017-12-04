@@ -82,10 +82,8 @@ impl LoxFunction {
 
 impl PartialEq for LoxFunction {
     fn eq(&self, other: &Self) -> bool {
-        let ptr = &*self.declaration as *const _;
-        let other_ptr = &*other.declaration as *const _;
-        // Since all closures are created fresh on evaluation, if they are equal
-        // they are the same function.
-        ptr == other_ptr
+        // Since all environments are created fresh on evaluation,
+        // they are equal if they are the same function.
+        self.closure == other.closure
     }
 }

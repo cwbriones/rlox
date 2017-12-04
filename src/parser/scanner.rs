@@ -104,7 +104,7 @@ impl<'s> TokenType<'s> {
 
     pub(super) fn into_binary(&self) -> Option<BinaryOperator> {
         match *self {
-            TokenType::Equal => Some(BinaryOperator::Equal),
+            TokenType::EqualEq => Some(BinaryOperator::Equal),
             TokenType::BangEq => Some(BinaryOperator::BangEq),
             TokenType::GreaterThan => Some(BinaryOperator::GreaterThan),
             TokenType::GreaterThanEq => Some(BinaryOperator::GreaterThanEq),

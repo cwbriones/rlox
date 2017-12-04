@@ -56,7 +56,7 @@ macro_rules! __binary_rule (
                     _ => break,
                 };
                 let rhs = self.$inner()?;
-                let operator = tok.ty.$convert().unwrap();
+                let operator = tok.ty.$convert().expect("attempted invalid conversion into operator type");
                 expr = $cons(operator, expr, rhs);
             }
             Ok(expr)
@@ -146,16 +146,17 @@ impl<'t> Parser<'t> {
         match self.peek_type()? {
             TokenType::RightParen => {},
             _ => {
-                let param = self.expect(TokenType::Identifier, "Expect parameters")?;
                 loop {
+                    let param = self.expect(TokenType::Identifier, "Expect parameters")?;
                     parameters.push(Variable::new_global(param.value.into()));
                     if parameters.len() > MAX_NUM_PARAMETERS {
                         // FIXME: This shouldn't stop parsing the function
                         return Err(SyntaxError::TooManyParameters);
                     }
-                    match self.peek_type()? {
-                        TokenType::Comma => {},
-                        _ => break,
+                    if let TokenType::Comma = self.peek_type()? {
+                        self.advance()?;
+                    } else {
+                        break;
                     }
                 }
             },
