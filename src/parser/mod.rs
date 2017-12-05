@@ -176,8 +176,7 @@ impl<'t> Parser<'t> {
             initializer = self.expression()?;
         }
         self.expect(TokenType::Semicolon, "variable declaration")?;
-        let var = Variable::new_global(ident.value.into());
-        Ok(Stmt::Var(var, initializer))
+        Ok(Stmt::var(ident.value, initializer))
     }
 
     // statement  → exprStmt
