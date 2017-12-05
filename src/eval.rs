@@ -1,6 +1,6 @@
 use environment::{Variable, Environment};
 use parser::ast::*;
-use value::{Value, Callable};
+use value::{Value};
 
 use std::rc::Rc;
 
@@ -41,8 +41,11 @@ pub struct Interpreter {
 
 impl Interpreter {
     pub fn new() -> Self {
+        let mut globals = Environment::new();
+        globals.set_at("clock", Value::builtin_clock(), 0);
+
         Interpreter {
-            globals: Environment::new(),
+            globals,
             retvals: Vec::new(),
         }
     }
@@ -97,8 +100,7 @@ impl Eval for Stmt {
                 interpreter.assign(env, var, val);
             },
             Stmt::Function(ref decl) => {
-                let callable = Callable::new_function(decl.clone(), env.clone());
-                let val = Value::Callable(callable);
+                let val = Value::new_function(decl.clone(), env.clone());
                 let decl = decl.borrow();
                 interpreter.assign(env, &decl.var, val);
             },

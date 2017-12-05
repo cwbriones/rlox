@@ -1,6 +1,10 @@
 use std::fmt::Display;
+use std::rc::Rc;
+use std::cell::RefCell;
 
-pub use self::callable::Callable;
+use parser::ast::FunctionDecl;
+use environment::Environment;
+use self::callable::Callable;
 
 mod callable;
 
@@ -16,6 +20,14 @@ pub enum Value {
 }
 
 impl Value {
+    pub fn new_function(declaration: Rc<RefCell<FunctionDecl>>, env: Environment) -> Self {
+        Value::Callable(Callable::new_function(declaration, env))
+    }
+
+    pub fn builtin_clock() -> Self {
+        Value::Callable(Callable::Clock)
+    }
+
     pub fn truthy(&self) -> bool {
         match *self {
             Value::Nil => false,

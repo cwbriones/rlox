@@ -12,6 +12,7 @@ use eval::Interpreter;
 #[derive(PartialEq, Clone)]
 pub enum Callable {
     Function(LoxFunction),
+    Clock,
 }
 
 impl Callable {
@@ -22,12 +23,14 @@ impl Callable {
     pub fn call(&self, interpreter: &mut Interpreter, arguments: Vec<Value>) -> Result<Value, RuntimeError> {
         match *self {
             Callable::Function(ref fun) => fun.call(interpreter, arguments),
+            Callable::Clock => clock(interpreter, arguments),
         }
     }
 
     pub fn arity(&self) -> usize {
         match *self {
-            Callable::Function(ref fun) => fun.arity()
+            Callable::Function(ref fun) => fun.arity(),
+            Callable::Clock => 0,
         }
     }
 }
@@ -38,6 +41,9 @@ impl Debug for Callable {
             Callable::Function(ref fun) => {
                 let decl = fun.declaration.borrow();
                 write!(f, "<fn {}>", decl.var.name())
+            },
+            Callable::Clock => {
+                write!(f, "<builtin 'clock'>")
             }
         }
     }
@@ -86,4 +92,15 @@ impl PartialEq for LoxFunction {
         // they are equal if they are the same function.
         self.closure == other.closure
     }
+}
+
+fn clock(_: &mut Interpreter, _: Vec<Value>) -> Result<Value, RuntimeError> {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let epoch_time =
+        SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("[FATAL] failed to get system time")
+        .as_secs();
+    Ok(Value::Number(epoch_time as f64))
 }
