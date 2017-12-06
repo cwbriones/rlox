@@ -1,0 +1,5 @@
+print clock;
+var first_run = 1512537400;
+if (clock() > first_run) {
+    print "time passes...";
+}
