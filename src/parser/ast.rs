@@ -1,4 +1,3 @@
-use value::Value;
 use super::Position;
 use std::rc::Rc;
 use std::cell::RefCell;
@@ -23,15 +22,15 @@ pub mod dsl {
     }
 
     pub fn number(n: f64) -> Expr {
-        Expr::Literal(Value::Number(n))
+        Expr::Literal(Literal::Number(n))
     }
 
     pub fn nil() -> Expr {
-        Expr::Literal(Value::Nil)
+        Expr::Literal(Literal::Nil)
     }
 
     pub fn truelit() -> Expr {
-        Expr::Literal(Value::True)
+        Expr::Literal(Literal::True)
     }
 
     // pub fn falselit() -> Expr {
@@ -39,7 +38,7 @@ pub mod dsl {
     // }
 
     pub fn string<S: Into<String>>(s: S) -> Expr {
-        Expr::Literal(Value::String(s.into()))
+        Expr::Literal(Literal::String(s.into()))
     }
 
     pub fn grouping(expr: Expr) -> Expr {
@@ -107,7 +106,7 @@ pub enum Expr {
     Binary(Binary),
     Call(Call),
     Grouping(Box<Expr>),
-    Literal(Value),
+    Literal(Literal),
     Unary(Unary),
     Var(Variable),
     Assign(Variable, Box<Expr>),
@@ -144,6 +143,15 @@ impl Expr {
             unary: Box::new(unary),
         })
     }
+}
+
+#[derive(PartialEq, Debug)]
+pub enum Literal {
+    Number(f64),
+    String(String),
+    True,
+    False,
+    Nil,
 }
 
 #[derive(PartialEq, Debug)]

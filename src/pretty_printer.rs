@@ -1,5 +1,4 @@
-use parser::ast::{Stmt, Expr};
-use value::Value;
+use parser::ast::{Stmt, Expr, Literal};
 
 pub struct PrettyPrinter {
     inner: String,
@@ -134,15 +133,13 @@ impl PrettyPrinter {
             },
             Expr::Literal(ref lit) => {
                 match *lit {
-                    Value::Number(n) => { self.push(n.to_string()); },
-                    Value::String(ref s) => {
+                    Literal::Number(n) => { self.push(n.to_string()); },
+                    Literal::String(ref s) => {
                         self.push_char('"').push(s).push_char('"');
                     }
-                    Value::True => { self.push("true"); },
-                    Value::False => { self.push("false"); },
-                    Value::Nil => { self.push("nil"); },
-                    Value::Void => { panic!("Obtained a literal of type 'Void'"); },
-                    Value::Callable(_) => { panic!("Obtained a literal of type 'Callable'"); },
+                    Literal::True => { self.push("true"); },
+                    Literal::False => { self.push("false"); },
+                    Literal::Nil => { self.push("nil"); },
                 }
             },
             Expr::Unary(ref unary) => {

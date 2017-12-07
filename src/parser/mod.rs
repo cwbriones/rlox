@@ -23,14 +23,14 @@
 
 use std::iter::Peekable;
 
-use self::errors::*;
-use value::Value;
 use environment::Variable;
-use self::scanner::Scanner;
-use self::ast::{Expr, Stmt};
 
+use self::errors::*;
+use self::scanner::Scanner;
+use self::ast::{Expr, Stmt, Literal};
 use self::scanner::Token;
 use self::scanner::TokenType;
+
 pub use self::scanner::Keyword;
 pub use self::scanner::Position;
 
@@ -170,7 +170,7 @@ impl<'t> Parser<'t> {
     // varDecl → "var" IDENTIFIER ( "=" expression )? ";" ;
     fn var_decl(&mut self) -> Result<Stmt> {
         let ident = self.expect(TokenType::Identifier, "keyword 'var'")?;
-        let mut initializer = Expr::Literal(Value::Nil);
+        let mut initializer = Expr::Literal(Literal::Nil);
         if let TokenType::Equal = self.peek_type()? {
             self.advance()?;
             initializer = self.expression()?;
@@ -226,7 +226,7 @@ impl<'t> Parser<'t> {
 
     fn return_statement(&mut self) -> Result<Stmt> {
         let expr = if let TokenType::Semicolon = self.peek_type()? {
-            Expr::Literal(Value::Nil)
+            Expr::Literal(Literal::Nil)
         } else {
             self.expression()?
         };
@@ -271,7 +271,7 @@ impl<'t> Parser<'t> {
         };
 
         let condition = match self.peek_type()? {
-            TokenType::Semicolon => Expr::Literal(Value::True),
+            TokenType::Semicolon => Expr::Literal(Literal::True),
             _ => self.expression()?,
         };
         self.expect(TokenType::Semicolon, "for condition")?;
@@ -418,23 +418,23 @@ impl<'t> Parser<'t> {
         match peek_type {
             TokenType::Keyword(Keyword::Nil) => {
                 self.advance()?;
-                Ok(Expr::Literal(Value::Nil))
+                Ok(Expr::Literal(Literal::Nil))
             },
             TokenType::Keyword(Keyword::True) => {
                 self.advance()?;
-                Ok(Expr::Literal(Value::True))
+                Ok(Expr::Literal(Literal::True))
             },
             TokenType::Keyword(Keyword::False) => {
                 self.advance()?;
-                Ok(Expr::Literal(Value::False))
+                Ok(Expr::Literal(Literal::False))
             },
             TokenType::String(s) => {
                 self.advance()?;
-                Ok(Expr::Literal(Value::String(s.into())))
+                Ok(Expr::Literal(Literal::String(s.into())))
             },
             TokenType::Number(n) => {
                 self.advance()?;
-                Ok(Expr::Literal(Value::Number(n)))
+                Ok(Expr::Literal(Literal::Number(n)))
             },
             TokenType::LeftParen => {
                 self.advance()?;

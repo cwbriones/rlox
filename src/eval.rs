@@ -290,9 +290,16 @@ impl Eval for Unary {
     }
 }
 
-impl Eval for Value {
+impl Eval for Literal {
     fn eval(&self, _: &mut Interpreter, _: &mut Environment) -> Result<Value> {
-        Ok(self.clone())
+        let val = match *self {
+            Literal::Nil => Value::Nil,
+            Literal::True => Value::True,
+            Literal::False => Value::False,
+            Literal::Number(n) => Value::Number(n),
+            Literal::String(ref s) => Value::String(s.clone()),
+        };
+        Ok(val)
     }
 }
 
