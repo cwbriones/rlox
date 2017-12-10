@@ -110,6 +110,7 @@ pub enum Expr {
     Unary(Unary),
     Var(Variable),
     Assign(Variable, Box<Expr>),
+    Get(Box<Expr>, String),
 }
 
 impl Expr {
@@ -142,6 +143,10 @@ impl Expr {
             operator: operator,
             unary: Box::new(unary),
         })
+    }
+
+    pub(super) fn get(expr: Expr, name: &str) -> Self {
+        Expr::Get(Box::new(expr), name.to_owned())
     }
 }
 

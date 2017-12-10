@@ -140,6 +140,9 @@ impl Resolver {
                     self.resolve_expr(arg)?;
                 }
             },
+            Expr::Get(ref mut lhs, _) => {
+                self.resolve_expr(lhs)?;
+            }
         }
         Ok(())
     }

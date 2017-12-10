@@ -120,13 +120,13 @@ impl PrettyPrinter {
         match *expr {
             Expr::Binary(ref bin) => {
                 let op = bin.operator;
-                self.push_expr(&*bin.lhs).push_char(' ').push(op.to_str())
-                    .push_char(' ').push_expr(&*bin.rhs);
+                self.push_expr(&bin.lhs).push_char(' ').push(op.to_str())
+                    .push_char(' ').push_expr(&bin.rhs);
             },
             Expr::Logical(ref logical) => {
                 let op = logical.operator;
-                self.push_expr(&*logical.lhs).push_char(' ').push(op.to_str())
-                    .push_char(' ').push_expr(&*logical.rhs);
+                self.push_expr(&logical.lhs).push_char(' ').push(op.to_str())
+                    .push_char(' ').push_expr(&logical.rhs);
             },
             Expr::Grouping(ref group) => {
                 self.push_char('(').push_expr(group).push_char(')');
@@ -144,7 +144,7 @@ impl PrettyPrinter {
             },
             Expr::Unary(ref unary) => {
                 let op = unary.operator;
-                self.push(op.to_str()).push_expr(&*unary.unary);
+                self.push(op.to_str()).push_expr(&unary.unary);
             },
             Expr::Var(ref var) => {
                 self.push(var.name());
@@ -153,11 +153,14 @@ impl PrettyPrinter {
                 self.push(var.name()).push(" = ").push_expr(expr);
             },
             Expr::Call(ref call) => {
-                self.push_expr(&*call.callee).push_char(')');
+                self.push_expr(&call.callee).push_char(')');
                 for arg in &call.arguments {
                     self.push_expr(arg).push_char(',');
                 }
                 self.pop();
+            },
+            Expr::Get(ref lhs, ref property) => {
+                self.push_expr(lhs).push_char('.').push(property);
             },
         }
         self

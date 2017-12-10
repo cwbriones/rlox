@@ -378,9 +378,19 @@ impl<'t> Parser<'t> {
 
     fn call(&mut self) -> Result<Expr> {
         let mut expr = self.primary()?;
-        while let TokenType::LeftParen = self.peek_type()? {
-            self.advance()?;
-            expr = self.finish_call(expr)?;
+        loop {
+            match self.peek_type()? {
+                TokenType::LeftParen => {
+                    self.advance()?;
+                    expr = self.finish_call(expr)?;
+                },
+                TokenType::Dot => {
+                    self.advance()?;
+                    let name = self.expect(TokenType::Identifier, "dot")?;
+                    expr = Expr::get(expr, name.value);
+                },
+                _ => break,
+            }
         }
         Ok(expr)
     }

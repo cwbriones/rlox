@@ -14,17 +14,19 @@ pub enum RuntimeError {
     InvalidOperands(String),
     #[fail(display = "break")]
     Break,
-    #[fail(display = "Can only call functions and classes (at line {})", line)]
+    #[fail(display = "can only call functions and classes (at line {})", line)]
     InvalidCallee {
         line: usize,
     },
-    #[fail(display = "Expected {} argument(s) but got {}", expected, got)]
+    #[fail(display = "expected {} argument(s) but got {}", expected, got)]
     BadArity{
         got: usize,
         expected: usize,
     },
     #[fail(display = "return")]
     Return,
+    #[fail(display = "only instances have properties")]
+    BadGet,
 }
 
 pub type Result<T> = ::std::result::Result<T, RuntimeError>;
@@ -161,6 +163,10 @@ impl Eval for Expr {
                 }
             },
             Expr::Call(ref inner) => inner.eval(interpreter, env),
+            Expr::Get(ref expr, ref property) => {
+                // FIXME: Implement instances
+                return Err(RuntimeError::BadGet);
+            },
         }
     }
 }
