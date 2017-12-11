@@ -142,7 +142,11 @@ impl Resolver {
             },
             Expr::Get(ref mut lhs, _) => {
                 self.resolve_expr(lhs)?;
-            }
+            },
+            Expr::Set(ref mut expr, _, ref mut value) => {
+                self.resolve_expr(expr)?;
+                self.resolve_expr(value)?;
+            },
         }
         Ok(())
     }

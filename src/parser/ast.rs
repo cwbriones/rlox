@@ -111,6 +111,7 @@ pub enum Expr {
     Var(Variable),
     Assign(Variable, Box<Expr>),
     Get(Box<Expr>, String),
+    Set(Box<Expr>, String, Box<Expr>),
 }
 
 impl Expr {
@@ -147,6 +148,11 @@ impl Expr {
 
     pub(super) fn get(expr: Expr, name: &str) -> Self {
         Expr::Get(Box::new(expr), name.to_owned())
+    }
+
+    pub(super) fn set(expr: Box<Expr>, name: String, value: Expr) -> Self {
+        // FIXME: This is strangely coupled
+        Expr::Set(expr, name, Box::new(value))
     }
 }
 

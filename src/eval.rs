@@ -26,7 +26,7 @@ pub enum RuntimeError {
     #[fail(display = "return")]
     Return,
     #[fail(display = "only instances have properties")]
-    BadGet,
+    BadAccess,
 }
 
 pub type Result<T> = ::std::result::Result<T, RuntimeError>;
@@ -165,7 +165,13 @@ impl Eval for Expr {
             Expr::Call(ref inner) => inner.eval(interpreter, env),
             Expr::Get(ref expr, ref property) => {
                 // FIXME: Implement instances
-                return Err(RuntimeError::BadGet);
+                return Err(RuntimeError::BadAccess);
+            },
+            Expr::Set(ref lhs, ref name, ref value) => {
+                let instance = lhs.eval(interpreter, env)?;
+                let value = value.eval(interpreter, env)?;
+                // FIXME: if an instance, set the property
+                return Err(RuntimeError::BadAccess)
             },
         }
     }

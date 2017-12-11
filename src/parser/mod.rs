@@ -339,6 +339,8 @@ impl<'t> Parser<'t> {
             let value = self.assignment()?;
             if let Expr::Var(var) = expr {
                 return Ok(Expr::Assign(var, Box::new(value)));
+            } else if let Expr::Get(expr, name) = expr {
+                return Ok(Expr::set(expr, name, value));
             }
             return Err(SyntaxError::InvalidAssignment);
         }
@@ -700,6 +702,29 @@ mod tests {
             fun increment(a) {
                 return 1;
             }
+        "#;
+
+        let mut parser = Parser::new(prog);
+        parser.parse().unwrap();
+    }
+
+    #[test]
+    fn property_get() {
+        let prog = r#"
+            a.field;
+            chained.field.access;
+            a.method.call();
+        "#;
+
+        let mut parser = Parser::new(prog);
+        parser.parse().unwrap();
+    }
+
+    #[test]
+    fn property_set() {
+        let prog = r#"
+            a.field = 1;
+            a.chain.of.access = "works";
         "#;
 
         let mut parser = Parser::new(prog);

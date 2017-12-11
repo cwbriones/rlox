@@ -104,7 +104,7 @@ impl PrettyPrinter {
             },
             Stmt::Return(ref expr) => {
                 self.push("return ").push_expr(expr).push_char(';');
-            }
+            },
         }
     }
 
@@ -162,6 +162,14 @@ impl PrettyPrinter {
             Expr::Get(ref lhs, ref property) => {
                 self.push_expr(lhs).push_char('.').push(property);
             },
+            Expr::Set(ref expr, ref name, ref value) => {
+                self.push_expr(expr)
+                    .push_char('.')
+                    .push(name)
+                    .push(" = ")
+                    .push_expr(value)
+                    .push_char(';');
+            }
         }
         self
     }
