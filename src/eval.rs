@@ -133,6 +133,11 @@ impl Eval for Stmt {
                 interpreter.push_return(retval);
                 return Err(RuntimeError::Return);
             },
+            Stmt::Class(ref var, ref methods) => {
+                let class = Value::new_class(var.name(), methods.clone(), env.clone());
+                interpreter.assign(env, var, class);
+                return Ok(Value::Void);
+            },
         }
         Ok(Value::Void)
     }
@@ -179,6 +184,11 @@ impl Eval for Expr {
                 } else {
                     Err(RuntimeError::BadAccess)
                 }
+            },
+            Expr::This(ref this, _) => {
+                // Any use of 'this' has already been validated
+                let val = interpreter.lookup(env, this).expect("'this' should always be defined");
+                Ok((*val).clone())
             },
         }
     }

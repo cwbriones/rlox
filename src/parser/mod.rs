@@ -27,7 +27,7 @@ use environment::Variable;
 
 use self::errors::*;
 use self::scanner::Scanner;
-use self::ast::{Expr, Stmt, Literal};
+use self::ast::{Expr, Stmt, Literal, FunctionDecl};
 use self::scanner::Token;
 use self::scanner::TokenType;
 
@@ -130,15 +130,54 @@ impl<'t> Parser<'t> {
                 self.advance()?;
                 self.var_decl()
             },
+            TokenType::Keyword(Keyword::Class) => {
+                self.advance()?;
+                self.class_decl()
+            },
             TokenType::Keyword(Keyword::Fun) => {
                 self.advance()?;
-                self.fun_decl()
+                self.fun_decl().map(Stmt::function_from_decl)
             },
             _ => self.statement(),
         }
     }
 
-    fn fun_decl(&mut self) -> Result<Stmt> {
+    fn class_decl(&mut self) -> Result<Stmt> {
+        let ident = self.expect(TokenType::Identifier, "Expect class name.")?;
+        self.expect(TokenType::LeftBrace, "class name")?;
+        let mut methods = Vec::new();
+        loop {
+            if let TokenType::RightBrace = self.peek_type()? {
+                break;
+            }
+            methods.push(self.fun_decl()?);
+        }
+        self.expect(TokenType::RightBrace, "method declarations")?;
+        Ok(Stmt::class(ident.value, methods))
+    }
+
+    // fn until<P, T>(&mut self, terminator: TokenType, parser: P) -> Result<Vec<T>> 
+    //     where
+    //         P: Fn() -> Result<T>
+    // {
+    //     let mut all = Vec::new();
+    //     match self.peek_type()? {
+    //         tok if tok == terminator => {},
+    //         _ => {
+    //             loop {
+    //                 all.push(parser()?);
+    //                 if let TokenType::Comma = self.peek_type()? {
+    //                     self.advance()?;
+    //                 } else {
+    //                     break;
+    //                 }
+    //             }
+    //         },
+    //     }
+    //     self.expect(terminator, "")
+    // }
+
+    fn fun_decl(&mut self) -> Result<FunctionDecl> {
         // FIXME: These errors are weird.
         let ident = self.expect(TokenType::Identifier, "Expect function name.")?;
         self.expect(TokenType::LeftParen, "function name")?;
@@ -164,7 +203,7 @@ impl<'t> Parser<'t> {
         self.expect(TokenType::RightParen, "function parameters")?;
         self.expect(TokenType::LeftBrace, "function parameters")?;
         let block = self.block()?;
-        Ok(Stmt::function(ident.value, parameters, block))
+        Ok(FunctionDecl::new(ident.value, parameters, block))
     }
 
     // varDecl → "var" IDENTIFIER ( "=" expression )? ";" ;
@@ -428,6 +467,11 @@ impl<'t> Parser<'t> {
     fn primary(&mut self) -> Result<Expr> {
         let peek_type = self.peek_type()?;
         match peek_type {
+            TokenType::Keyword(Keyword::This) => {
+                let var = Variable::new_local("this");
+                let previous = self.advance()?;
+                Ok(Expr::This(var, previous.position))
+            },
             TokenType::Keyword(Keyword::Nil) => {
                 self.advance()?;
                 Ok(Expr::Literal(Literal::Nil))
@@ -725,6 +769,20 @@ mod tests {
         let prog = r#"
             a.field = 1;
             a.chain.of.access = "works";
+        "#;
+
+        let mut parser = Parser::new(prog);
+        parser.parse().unwrap();
+    }
+
+    #[test]
+    fn class() {
+        let prog = r#"
+            class Cake {
+                bake() {
+                    print "Baking...";
+                }
+            }
         "#;
 
         let mut parser = Parser::new(prog);

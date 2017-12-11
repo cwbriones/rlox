@@ -65,6 +65,7 @@ pub enum Stmt {
     Break,
     Function(Rc<RefCell<FunctionDecl>>),
     Return(Expr),
+    Class(Variable, Vec<Rc<RefCell<FunctionDecl>>>),
 }
 
 #[derive(PartialEq, Debug)]
@@ -72,6 +73,17 @@ pub struct FunctionDecl {
     pub var: Variable,
     pub parameters: Vec<Variable>,
     pub body: Vec<Stmt>,
+}
+
+impl FunctionDecl {
+    pub(super) fn new(name: &str, parameters: Vec<Variable>, body: Vec<Stmt>) -> Self {
+        let var = Variable::new_local(name.into());
+        FunctionDecl {
+            var,
+            parameters,
+            body,
+        }
+    }
 }
 
 impl Stmt {
@@ -90,13 +102,15 @@ impl Stmt {
         Stmt::If(cond, Box::new(then_clause), Some(Box::new(else_clause)))
     }
 
-    pub(super) fn function(name: &str, parameters: Vec<Variable>, body: Vec<Stmt>) -> Stmt {
-        let var = Variable::new_local(name.into());
-        Stmt::Function(Rc::new(RefCell::new(FunctionDecl {
-            var,
-            parameters,
-            body,
-        })))
+    pub(super) fn class(name: &str, methods: Vec<FunctionDecl>) -> Stmt {
+        let methods = methods.into_iter()
+            .map(|d| Rc::new(RefCell::new(d)))
+            .collect::<Vec<_>>();
+        Stmt::Class(Variable::new_local(name), methods)
+    }
+
+    pub(super) fn function_from_decl(declaration: FunctionDecl) -> Stmt {
+        Stmt::Function(Rc::new(RefCell::new(declaration)))
     }
 }
 
@@ -112,6 +126,7 @@ pub enum Expr {
     Assign(Variable, Box<Expr>),
     Get(Box<Expr>, String),
     Set(Box<Expr>, String, Box<Expr>),
+    This(Variable, Position),
 }
 
 impl Expr {

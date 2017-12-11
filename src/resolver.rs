@@ -56,23 +56,7 @@ impl Resolver {
                 self.resolve_local(var);
             },
             Stmt::Function(ref mut decl) => {
-                let enclosing_function = self.function.take();
-                self.function = Some(decl.clone());
-
-                let mut decl = decl.borrow_mut();
-                // Define the function itself
-                self.declare(decl.var.name())?;
-                self.define(decl.var.name());
-
-                self.begin_scope();
-                for param in &decl.parameters {
-                    self.declare(param.name())?;
-                    self.define(param.name());
-                }
-                self.resolve(&mut decl.body)?;
-                self.end_scope();
-
-                self.function = enclosing_function;
+                self.resolve_function(decl)?;
             },
             Stmt::Block(ref mut stmts) => {
                 self.begin_scope();
@@ -103,7 +87,40 @@ impl Resolver {
                 }
                 self.resolve_expr(expr)?;
             },
+            Stmt::Class(ref cls, ref mut methods) => {
+                self.declare(cls.name())?;
+                self.define(cls.name());
+
+                self.begin_scope();
+                self.declare("this")?;
+                self.define("this");
+                for method in methods {
+                    self.resolve_function(method)?;
+                }
+                self.end_scope();
+            },
         }
+        Ok(())
+    }
+
+    pub fn resolve_function(&mut self, decl: &mut Rc<RefCell<FunctionDecl>>) -> Result {
+        let enclosing_function = self.function.take();
+        self.function = Some(decl.clone());
+
+        let mut decl = decl.borrow_mut();
+        // Define the function itself
+        self.declare(decl.var.name())?;
+        self.define(decl.var.name());
+
+        self.begin_scope();
+        for param in &decl.parameters {
+            self.declare(param.name())?;
+            self.define(param.name());
+        }
+        self.resolve(&mut decl.body)?;
+        self.end_scope();
+
+        self.function = enclosing_function;
         Ok(())
     }
 
@@ -146,6 +163,9 @@ impl Resolver {
             Expr::Set(ref mut expr, _, ref mut value) => {
                 self.resolve_expr(expr)?;
                 self.resolve_expr(value)?;
+            },
+            Expr::This(ref mut var, _) => {
+                self.resolve_local(var);
             },
         }
         Ok(())

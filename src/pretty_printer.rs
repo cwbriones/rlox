@@ -105,6 +105,9 @@ impl PrettyPrinter {
             Stmt::Return(ref expr) => {
                 self.push("return ").push_expr(expr).push_char(';');
             },
+            Stmt::Class(ref cls, ref _methods) => {
+                self.push("class ").push(cls.name()).push("{}");
+            },
         }
     }
 
@@ -169,7 +172,8 @@ impl PrettyPrinter {
                     .push(" = ")
                     .push_expr(value)
                     .push_char(';');
-            }
+            },
+            Expr::This(_, _) => { self.push("this"); },
         }
         self
     }

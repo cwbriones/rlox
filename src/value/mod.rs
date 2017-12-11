@@ -4,6 +4,7 @@ use std::cell::RefCell;
 
 use parser::ast::FunctionDecl;
 use environment::Environment;
+
 use self::callable::Callable;
 use self::instance::LoxInstance;
 
@@ -25,6 +26,10 @@ pub enum Value {
 impl Value {
     pub fn new_function(declaration: Rc<RefCell<FunctionDecl>>, env: Environment) -> Self {
         Value::Callable(Callable::new_function(declaration, env))
+    }
+
+    pub fn new_class(name: &str, methods: Vec<Rc<RefCell<FunctionDecl>>>, env: Environment) -> Self {
+        Value::Callable(Callable::new_class(name, methods, env))
     }
 
     pub fn builtin_clock() -> Self {
@@ -60,7 +65,7 @@ impl Display for Value {
             Value::Nil => write!(f, "nil"),
             Value::Void => Ok(()),
             Value::Callable(ref fun) => write!(f, "{:?}", fun),
-            Value::Instance(_) => write!(f, "<instance>"),
+            Value::Instance(ref inst) => write!(f, "{:?}", inst),
         }
     }
 }

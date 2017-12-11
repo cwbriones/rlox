@@ -56,5 +56,6 @@ define_test!(functions);
 define_test!(resolving);
 define_test!(equality);
 define_test!(native);
+define_test!(class);
 
 define_test!(divide_by_zero);

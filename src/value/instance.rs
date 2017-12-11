@@ -3,36 +3,49 @@ use std::rc::Rc;
 use std::cell::RefCell;
 
 use super::Value;
+use super::callable::Callable;
+use super::callable::LoxClass;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct LoxInstance {
+    class: Rc<LoxClass>,
     fields: Rc<RefCell<HashMap<String, Value>>>,
 }
 
 impl LoxInstance {
-    fn new() -> Self {
+    pub fn new(class: Rc<LoxClass>) -> Self {
         let fields = Rc::new(RefCell::new(HashMap::new()));
         LoxInstance {
+            class,
             fields,
         }
     }
 
     pub fn get(&self, field: &str) -> Option<Value> {
-        self.fields.borrow().get(field).map(Clone::clone)
+        self.class
+            .method(field)
+            .map(|m| {
+                let this = Value::Instance(self.clone());
+                let bound = m.bind(this);
+                Value::Callable(Callable::Function(bound))
+            })
+            .or_else(|| self.fields.borrow().get(field).map(Clone::clone))
     }
 
     pub fn set(&self, field: &str, value: Value) {
         let mut fields = self.fields.borrow_mut();
         fields.insert(field.into(), value);
     }
-
-    fn this(&self) -> Self {
-        self.clone()
-    }
 }
 
 impl PartialEq for LoxInstance {
     fn eq(&self, other: &LoxInstance) -> bool {
         &*self.fields as *const _ == &*other.fields as *const _
+    }
+}
+
+impl ::std::fmt::Debug for LoxInstance {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        write!(f, "'{}' instance", self.class.name())
     }
 }

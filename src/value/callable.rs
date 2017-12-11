@@ -1,8 +1,10 @@
 use std::fmt::Debug;
 use std::rc::Rc;
 use std::cell::RefCell;
+use std::collections::HashMap;
 
 use value::Value;
+use value::LoxInstance;
 use environment::Environment;
 use parser::ast::FunctionDecl;
 
@@ -13,6 +15,7 @@ use eval::Interpreter;
 pub enum Callable {
     Function(LoxFunction),
     Clock,
+    Class(LoxClassHandle),
 }
 
 impl Callable {
@@ -20,10 +23,17 @@ impl Callable {
         Callable::Function(LoxFunction::new(declaration, env))
     }
 
+    pub fn new_class(name: &str, methods: Vec<Rc<RefCell<FunctionDecl>>>, env: Environment) -> Self {
+        Callable::Class(LoxClassHandle {
+            class: Rc::new(LoxClass::new(name, methods, env))
+        })
+    }
+
     pub fn call(&self, interpreter: &mut Interpreter, arguments: Vec<Value>) -> Result<Value, RuntimeError> {
         match *self {
             Callable::Function(ref fun) => fun.call(interpreter, arguments),
             Callable::Clock => clock(interpreter, arguments),
+            Callable::Class(ref cls) => cls.call(interpreter, arguments),
         }
     }
 
@@ -31,6 +41,7 @@ impl Callable {
         match *self {
             Callable::Function(ref fun) => fun.arity(),
             Callable::Clock => 0,
+            Callable::Class(ref cls) => cls.arity(),
         }
     }
 }
@@ -40,11 +51,14 @@ impl Debug for Callable {
         match *self {
             Callable::Function(ref fun) => {
                 let decl = fun.declaration.borrow();
-                write!(f, "<fn {}>", decl.var.name())
+                write!(f, "<fn '{}'>", decl.var.name())
             },
             Callable::Clock => {
                 write!(f, "<builtin 'clock'>")
-            }
+            },
+            Callable::Class(ref cls) => {
+                write!(f, "{}", cls.name())
+            },
         }
     }
 }
@@ -60,6 +74,15 @@ impl LoxFunction {
         LoxFunction {
             declaration,
             closure,
+        }
+    }
+
+    pub fn bind(&self, this: Value) -> Self {
+        let mut closure = self.closure.clone();
+        closure.set_at("this", this, 0);
+        LoxFunction {
+            declaration: self.declaration.clone(),
+            closure: closure,
         }
     }
 
@@ -103,4 +126,79 @@ fn clock(_: &mut Interpreter, _: Vec<Value>) -> Result<Value, RuntimeError> {
         .expect("[FATAL] failed to get system time")
         .as_secs();
     Ok(Value::Number(epoch_time as f64))
+}
+
+#[derive(Clone)]
+pub struct LoxClassHandle {
+    class: Rc<LoxClass>,
+}
+
+use std::ops::Deref;
+
+impl Deref for LoxClassHandle {
+    type Target = LoxClass;
+
+    fn deref(&self) -> &LoxClass{
+        &*self.class
+    }
+}
+
+#[derive(Clone)]
+pub struct LoxClass {
+    name: String,
+    methods: HashMap<String, LoxFunction>,
+}
+
+type LoxFunctionRef = Rc<RefCell<FunctionDecl>>;
+
+impl LoxClassHandle {
+    pub fn call(&self, interpreter: &mut Interpreter, arguments: Vec<Value>) -> Result<Value, RuntimeError> {
+        let instance = Value::Instance(LoxInstance::new(self.class.clone()));
+        if let Some(init) = self.method("init") {
+            let bound = init.bind(instance.clone());
+            bound.call(interpreter, arguments)?;
+        }
+        Ok(instance)
+    }
+
+    fn arity(&self) -> usize {
+        self.method("init").map(|m| m.arity()).unwrap_or(0)
+    }
+}
+
+impl LoxClass {
+    pub fn new(name: &str, declarations: Vec<LoxFunctionRef>, env: Environment) -> Self {
+        let mut methods = HashMap::new();
+        for decl in declarations {
+            let name = decl.borrow().var.name().into();
+            let method = LoxFunction::new(decl, env.clone());
+            methods.insert(name, method);
+        }
+        LoxClass {
+            name: name.to_owned(),
+            methods: methods,
+        }
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn method(&self, name: &str) -> Option<LoxFunction> {
+        self.methods
+            .get(name)
+            .map(Clone::clone)
+    }
+}
+
+impl PartialEq for LoxClassHandle {
+    fn eq(&self, other: &LoxClassHandle) -> bool {
+        &*self.class as *const _ == &*other.class as *const _
+    }
+}
+
+impl ::std::fmt::Debug for LoxClassHandle {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        write!(f, "<class '{}'>", self.name())
+    }
 }

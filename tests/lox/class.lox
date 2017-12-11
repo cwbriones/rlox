@@ -1,0 +1,12 @@
+class Cake {
+    init(kind) {
+        this.kind = kind;
+    }
+
+    bake() {
+        print "Baking a " + this.kind + " cake at 300F...";
+    }
+}
+
+var cake = Cake("chocolate");
+cake.bake();
