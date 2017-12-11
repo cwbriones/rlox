@@ -164,14 +164,21 @@ impl Eval for Expr {
             },
             Expr::Call(ref inner) => inner.eval(interpreter, env),
             Expr::Get(ref expr, ref property) => {
-                // FIXME: Implement instances
-                return Err(RuntimeError::BadAccess);
+                if let Value::Instance(ref mut instance) = expr.eval(interpreter, env)? {
+                    Ok(instance.get(property).unwrap_or(Value::Nil))
+                } else {
+                    Err(RuntimeError::BadAccess)
+                }
             },
             Expr::Set(ref lhs, ref name, ref value) => {
-                let instance = lhs.eval(interpreter, env)?;
+                let mut instance = lhs.eval(interpreter, env)?;
                 let value = value.eval(interpreter, env)?;
-                // FIXME: if an instance, set the property
-                return Err(RuntimeError::BadAccess)
+                if let Value::Instance(ref mut instance) = instance {
+                    instance.set(name, value.clone());
+                    Ok(value)
+                } else {
+                    Err(RuntimeError::BadAccess)
+                }
             },
         }
     }

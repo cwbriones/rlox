@@ -5,8 +5,10 @@ use std::cell::RefCell;
 use parser::ast::FunctionDecl;
 use environment::Environment;
 use self::callable::Callable;
+use self::instance::LoxInstance;
 
 mod callable;
+mod instance;
 
 #[derive(PartialEq, Clone, Debug)]
 pub enum Value {
@@ -17,6 +19,7 @@ pub enum Value {
     Nil,
     Void,
     Callable(Callable),
+    Instance(LoxInstance),
 }
 
 impl Value {
@@ -57,6 +60,7 @@ impl Display for Value {
             Value::Nil => write!(f, "nil"),
             Value::Void => Ok(()),
             Value::Callable(ref fun) => write!(f, "{:?}", fun),
+            Value::Instance(_) => write!(f, "<instance>"),
         }
     }
 }
