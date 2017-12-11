@@ -15,12 +15,27 @@ pub enum ResolveError {
     InitializerSelfReference,
     #[fail(display = "Variable with this name already declared in this scope")]
     AlreadyDeclared,
+    #[fail(display = "Cannot use 'this' outside of a class")]
+    ThisOutsideClass,
+    #[fail(display = "Cannot return a value from an initializer")]
+    ReturnFromInitializer,
 }
 
 pub struct Resolver {
     scopes: Vec<HashMap<String, bool>>,
-    function: Option<Rc<RefCell<FunctionDecl>>>,
+    function: Option<FunctionType>,
+    class: Option<ClassType>,
     loop_depth: usize,
+}
+
+enum FunctionType {
+    Initializer,
+    Method,
+    Function,
+}
+
+enum ClassType {
+    Class,
 }
 
 type Result = ::std::result::Result<(), ResolveError>;
@@ -30,6 +45,7 @@ impl Resolver {
         Resolver {
             scopes: vec![HashMap::new()],
             function: None,
+            class: None,
             loop_depth: 0,
         }
     }
@@ -56,7 +72,7 @@ impl Resolver {
                 self.resolve_local(var);
             },
             Stmt::Function(ref mut decl) => {
-                self.resolve_function(decl)?;
+                self.resolve_function(decl, FunctionType::Function)?;
             },
             Stmt::Block(ref mut stmts) => {
                 self.begin_scope();
@@ -82,12 +98,15 @@ impl Resolver {
                 }
             },
             Stmt::Return(ref mut expr) => {
-                if self.function.is_none() {
-                    return Err(ResolveError::ReturnOutsideFunction);
+                match self.function {
+                    Some(FunctionType::Initializer) => return Err(ResolveError::ReturnFromInitializer),
+                    Some(_) => self.resolve_expr(expr)?,
+                    None => return Err(ResolveError::ReturnOutsideFunction),
                 }
-                self.resolve_expr(expr)?;
             },
             Stmt::Class(ref cls, ref mut methods) => {
+                let enclosing_class = self.class.take();
+                self.class = Some(ClassType::Class);
                 self.declare(cls.name())?;
                 self.define(cls.name());
 
@@ -95,17 +114,23 @@ impl Resolver {
                 self.declare("this")?;
                 self.define("this");
                 for method in methods {
-                    self.resolve_function(method)?;
+                    let is_init = method.borrow().var.name() == "init";
+                    if is_init {
+                        self.resolve_function(method, FunctionType::Initializer)?;
+                    } else {
+                        self.resolve_function(method, FunctionType::Method)?;
+                    }
                 }
                 self.end_scope();
+                self.class = enclosing_class;
             },
         }
         Ok(())
     }
 
-    pub fn resolve_function(&mut self, decl: &mut Rc<RefCell<FunctionDecl>>) -> Result {
+    fn resolve_function(&mut self, decl: &mut Rc<RefCell<FunctionDecl>>, function_type: FunctionType) -> Result {
         let enclosing_function = self.function.take();
-        self.function = Some(decl.clone());
+        self.function = Some(function_type);
 
         let mut decl = decl.borrow_mut();
         // Define the function itself
@@ -165,6 +190,9 @@ impl Resolver {
                 self.resolve_expr(value)?;
             },
             Expr::This(ref mut var, _) => {
+                if self.class.is_none() {
+                    return Err(ResolveError::ThisOutsideClass);
+                }
                 self.resolve_local(var);
             },
         }
@@ -230,6 +258,24 @@ mod tests {
         let prog = "break;";
         let err  = parse_and_resolve(prog).unwrap_err();
         assert_eq!(err, ResolveError::BreakOutsideLoop);
+    }
+
+    #[test]
+    fn this_outside_class() {
+        let prog = "this;";
+        let err  = parse_and_resolve(prog).unwrap_err();
+        assert_eq!(err, ResolveError::ThisOutsideClass);
+
+        let prog = "fun foo() { this; }";
+        let err  = parse_and_resolve(prog).unwrap_err();
+        assert_eq!(err, ResolveError::ThisOutsideClass);
+    }
+
+    #[test]
+    fn return_from_init() {
+        let prog = "class Foo { init() { return; } }";
+        let err  = parse_and_resolve(prog).unwrap_err();
+        assert_eq!(err, ResolveError::ReturnFromInitializer);
     }
 
     fn parse_and_resolve(prog: &str) -> Result {
