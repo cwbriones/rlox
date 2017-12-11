@@ -1,8 +1,6 @@
 use environment::{Variable, Environment};
 use parser::ast::*;
-use value::{Value};
-
-use std::rc::Rc;
+use value::Value;
 
 #[derive(Debug, Fail)]
 pub enum RuntimeError {
@@ -69,7 +67,7 @@ impl Interpreter {
         self.retvals.pop().expect("return stack to be nonempty")
     }
 
-    pub fn lookup(&self, env: &Environment, var: &Variable) -> Option<Rc<Value>> {
+    pub fn lookup(&self, env: &Environment, var: &Variable) -> Option<Value> {
         if let Some(depth) = var.depth() {
             return env.get_at(var.name(), depth);
         }
@@ -155,7 +153,7 @@ impl Eval for Expr {
                 match interpreter.lookup(env, var) {
                     None => return Err(RuntimeError::UndefinedVariable(var.name().into())),
                     Some(v) => {
-                        return Ok((*v).clone())
+                        return Ok(v)
                     }
                 }
             },
@@ -188,7 +186,7 @@ impl Eval for Expr {
             Expr::This(ref this, _) => {
                 // Any use of 'this' has already been validated
                 let val = interpreter.lookup(env, this).expect("'this' should always be defined");
-                Ok((*val).clone())
+                Ok(val)
             },
         }
     }

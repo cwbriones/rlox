@@ -5,7 +5,7 @@ use std::rc::Rc;
 use std::cell::RefCell;
 
 struct EnvNode {
-    map: BTreeMap<String, Rc<Value>>,
+    map: BTreeMap<String, Value>,
     parent: Option<Rc<RefCell<EnvNode>>>,
 }
 
@@ -24,12 +24,12 @@ impl EnvNode {
         }
     }
 
-    fn get(&self, key: &str) -> Option<Rc<Value>> {
+    fn get(&self, key: &str) -> Option<Value> {
         self.map.get(key).map(Clone::clone)
     }
 
     fn set(&mut self, key: &str, value: Value) -> bool {
-        self.map.insert(key.to_owned(), Rc::new(value)).is_some()
+        self.map.insert(key.to_owned(), value).is_some()
     }
 }
 
@@ -88,7 +88,7 @@ impl Environment {
         Environment { node }
     }
 
-    pub fn get_at(&self, key: &str, depth: usize) -> Option<Rc<Value>> {
+    pub fn get_at(&self, key: &str, depth: usize) -> Option<Value> {
         self.ancestor(depth)
             .and_then(|ancestor| ancestor.borrow().get(key).clone())
     }
@@ -138,7 +138,7 @@ mod tests {
         let mut env = Environment::new();
         assert_eq!(None, env.get_at("a", 0));
         env.set_at("a", Value::True, 0);
-        assert_eq!(Some(Rc::new(Value::True)), env.get_at("a", 0));
+        assert_eq!(Some(Value::True), env.get_at("a", 0));
         assert_eq!(None, env.get_at("b", 0));
     }
 
@@ -152,16 +152,16 @@ mod tests {
         inner.set_at("a", Value::True, 0);
         inner2.set_at("a", Value::False, 0);
 
-        assert_eq!(Some(Rc::new(Value::False)), inner2.get_at("a", 0));
-        assert_eq!(Some(Rc::new(Value::True)), inner2.get_at("a", 1));
-        assert_eq!(Some(Rc::new(Value::Nil)), inner2.get_at("a", 2));
+        assert_eq!(Some(Value::False), inner2.get_at("a", 0));
+        assert_eq!(Some(Value::True), inner2.get_at("a", 1));
+        assert_eq!(Some(Value::Nil), inner2.get_at("a", 2));
         assert_eq!(None, inner2.get_at("a", 3));
 
-        assert_eq!(Some(Rc::new(Value::True)), inner.get_at("a", 0));
-        assert_eq!(Some(Rc::new(Value::Nil)), inner.get_at("a", 1));
+        assert_eq!(Some(Value::True), inner.get_at("a", 0));
+        assert_eq!(Some(Value::Nil), inner.get_at("a", 1));
         assert_eq!(None, inner.get_at("a", 2));
 
-        assert_eq!(Some(Rc::new(Value::Nil)), outer.get_at("a", 0));
+        assert_eq!(Some(Value::Nil), outer.get_at("a", 0));
     }
 
     #[test]
@@ -175,12 +175,12 @@ mod tests {
         inner2.set_at("a", Value::False, 0);
 
         inner2.set_at("a", Value::Number(1.0), 2);
-        assert_eq!(Some(Rc::new(Value::Number(1.0))), outer.get_at("a", 0));
+        assert_eq!(Some(Value::Number(1.0)), outer.get_at("a", 0));
 
         inner.set_at("a", Value::Number(2.0), 1);
-        assert_eq!(Some(Rc::new(Value::Number(2.0))), outer.get_at("a", 0));
+        assert_eq!(Some(Value::Number(2.0)), outer.get_at("a", 0));
 
         inner2.set_at("b", Value::Number(3.0), 1);
-        assert_eq!(Some(Rc::new(Value::Number(3.0))), inner.get_at("b", 0));
+        assert_eq!(Some(Value::Number(3.0)), inner.get_at("b", 0));
     }
 }
