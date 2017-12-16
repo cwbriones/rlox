@@ -25,6 +25,8 @@ pub enum RuntimeError {
     Return,
     #[fail(display = "only instances have properties")]
     BadAccess,
+    #[fail(display = "Superclass must be a class")]
+    SuperNotAClass,
 }
 
 pub type Result<T> = ::std::result::Result<T, RuntimeError>;
@@ -133,15 +135,17 @@ impl Eval for Stmt {
             },
             Stmt::Class(ref var, ref methods, ref sc_var) => {
                 // TODO: Clean this up.
-                // Verify that it's a class?
                 let class = if let &Some(ref sc_var) = sc_var {
                     let superclass = match interpreter.lookup(env, sc_var) {
                         Some(v) => v.clone(),
                         None => return Err(RuntimeError::UndefinedVariable(var.name().into())),
                     };
-                    let mut env = env.clone();
+                    if superclass.clone().into_class().is_none() {
+                        return Err(RuntimeError::SuperNotAClass);
+                    }
+                    let mut env = env.extend();
                     env.set_at("super", superclass.clone(), 0);
-                    Value::new_class(var.name(), methods.clone(), env.clone(), Some(superclass))
+                    Value::new_class(var.name(), methods.clone(), env, Some(superclass))
                 } else {
                     Value::new_class(var.name(), methods.clone(), env.clone(), None)
                 };
@@ -200,10 +204,22 @@ impl Eval for Expr {
                 let val = interpreter.lookup(env, this).expect("'this' should always be defined");
                 Ok(val)
             },
-            Expr::Super(ref superclass, _) => {
+            Expr::Super(ref supervar, _, ref method) => {
+                // XXX: This is all kind of hacky.
+                //
                 // Any use of 'super' has already been validated
-                let val = interpreter.lookup(env, superclass).expect("'super' should always be defined");
-                Ok(val.clone())
+                let superclass = interpreter.lookup(env, supervar).expect("'super' should always be defined");
+                // This should always be one scope above 'super'
+                let this = env.get_at("this", supervar.depth().expect("super is resolved") - 1).expect("'this' should be defined");
+
+                // Now we have to resolve the method bound with this
+                let superclass = superclass.into_class().expect("'super' should always resolve to a class");
+                match superclass.method(method) {
+                    Some(method) => {
+                        Ok(method.bind(this).into())
+                    },
+                    None => Err(RuntimeError::BadAccess),
+                }
             },
         }
     }

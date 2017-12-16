@@ -127,7 +127,7 @@ pub enum Expr {
     Get(Box<Expr>, String),
     Set(Box<Expr>, String, Box<Expr>),
     This(Variable, Position),
-    Super(Variable, Position),
+    Super(Variable, Position, String),
 }
 
 impl Expr {

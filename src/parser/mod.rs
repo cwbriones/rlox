@@ -476,9 +476,11 @@ impl<'t> Parser<'t> {
         let peek_type = self.peek_type()?;
         match peek_type {
             TokenType::Keyword(Keyword::Super) => {
+                let keyword = self.advance()?;
+                self.expect(TokenType::Dot, "keyword 'super'")?;
+                let ident = self.expect(TokenType::Identifier, "superclass method name")?;
                 let var = Variable::new_local("super");
-                let previous = self.advance()?;
-                Ok(Expr::Super(var, previous.position))
+                Ok(Expr::Super(var, keyword.position, ident.value.to_owned()))
             },
             TokenType::Keyword(Keyword::This) => {
                 let var = Variable::new_local("this");

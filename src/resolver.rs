@@ -32,12 +32,14 @@ pub struct Resolver {
     loop_depth: usize,
 }
 
+#[derive(PartialEq, Debug, Clone, Copy)]
 enum FunctionType {
     Initializer,
     Method,
     Function,
 }
 
+#[derive(PartialEq, Debug, Clone, Copy)]
 enum ClassType {
     Class,
     Subclass,
@@ -176,15 +178,17 @@ impl Resolver {
                 }
             },
             Stmt::Class(ref cls, ref mut methods, ref mut superclass) => {
+                self.scopes.init(cls.name())?;
                 let enclosing_class = self.class.take();
                 if let &mut Some(ref mut superclass) = superclass {
-                    self.scopes.resolve_local(superclass);
                     self.class = Some(ClassType::Subclass);
+                    self.scopes.resolve_local(superclass);
+                    self.scopes.begin(); // begin 'super' scope
+                    self.scopes.init("super")?;
                 } else {
                     self.class = Some(ClassType::Class);
                 }
-                self.scopes.init(cls.name())?;
-                self.scopes.begin();
+                self.scopes.begin(); // begin 'this' scope
                 self.scopes.init("this")?;
                 for method in methods {
                     let is_init = method.borrow().var.name() == "init";
@@ -194,7 +198,10 @@ impl Resolver {
                         self.resolve_function(method, FunctionType::Method)?;
                     }
                 }
-                self.scopes.end();
+                self.scopes.end(); // end 'this' scope
+                if superclass.is_some() {
+                    self.scopes.end(); // end 'super' scope
+                }
                 self.class = enclosing_class;
             },
         }
@@ -266,15 +273,12 @@ impl Resolver {
                 }
                 self.scopes.resolve_local(var);
             },
-            Expr::Super(ref mut var, _) => {
+            Expr::Super(ref mut var, _, _) => {
                 match self.class {
                     None => Err(ResolveError::SuperOutsideClass),
                     Some(ClassType::Class) => Err(ResolveError::SuperInBaseClass),
                     _ => Ok(()),
                 }?;
-                if self.class.is_none() {
-                    return Err(ResolveError::SuperOutsideClass);
-                }
                 self.scopes.resolve_local(var);
             },
         }

@@ -178,7 +178,7 @@ impl PrettyPrinter {
                     .push_char(';');
             },
             Expr::This(_, _) => { self.push("this"); },
-            Expr::Super(_, _) => { self.push("super"); },
+            Expr::Super(_, _, ref method) => { self.push("super").push_char('.').push(method); },
         }
         self
     }

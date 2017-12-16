@@ -49,6 +49,13 @@ impl Value {
             _ => true,
         }
     }
+
+    pub fn into_class(self) -> Option<callable::LoxClassHandle> {
+        if let Value::Callable(Callable::Class(cls)) = self {
+            return Some(cls);
+        }
+        None
+    }
 }
 
 impl From<bool> for Value {

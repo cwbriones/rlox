@@ -78,7 +78,7 @@ impl LoxFunction {
     }
 
     pub fn bind(&self, this: Value) -> Self {
-        let mut closure = self.closure.clone();
+        let mut closure = self.closure.extend();
         closure.set_at("this", this, 0);
         LoxFunction {
             declaration: self.declaration.clone(),
@@ -114,6 +114,12 @@ impl PartialEq for LoxFunction {
         // Since all environments are created fresh on evaluation,
         // they are equal if they are the same function.
         self.closure == other.closure
+    }
+}
+
+impl Into<Value> for LoxFunction {
+    fn into(self) -> Value {
+        Value::Callable(Callable::Function(self))
     }
 }
 
