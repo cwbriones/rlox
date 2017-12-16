@@ -105,8 +105,12 @@ impl PrettyPrinter {
             Stmt::Return(ref expr) => {
                 self.push("return ").push_expr(expr).push_char(';');
             },
-            Stmt::Class(ref cls, ref _methods) => {
-                self.push("class ").push(cls.name()).push("{}");
+            Stmt::Class(ref cls, ref _methods, ref superclass) => {
+                self.push("class ").push(cls.name());
+                if let &Some(ref superclass) = superclass {
+                    self.push(" < ").push(superclass.name());
+                }
+                self.push("{}");
             },
         }
     }
@@ -174,6 +178,7 @@ impl PrettyPrinter {
                     .push_char(';');
             },
             Expr::This(_, _) => { self.push("this"); },
+            Expr::Super(_, _) => { self.push("super"); },
         }
         self
     }

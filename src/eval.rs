@@ -131,8 +131,20 @@ impl Eval for Stmt {
                 interpreter.push_return(retval);
                 return Err(RuntimeError::Return);
             },
-            Stmt::Class(ref var, ref methods) => {
-                let class = Value::new_class(var.name(), methods.clone(), env.clone());
+            Stmt::Class(ref var, ref methods, ref sc_var) => {
+                // TODO: Clean this up.
+                // Verify that it's a class?
+                let class = if let &Some(ref sc_var) = sc_var {
+                    let superclass = match interpreter.lookup(env, sc_var) {
+                        Some(v) => v.clone(),
+                        None => return Err(RuntimeError::UndefinedVariable(var.name().into())),
+                    };
+                    let mut env = env.clone();
+                    env.set_at("super", superclass.clone(), 0);
+                    Value::new_class(var.name(), methods.clone(), env.clone(), Some(superclass))
+                } else {
+                    Value::new_class(var.name(), methods.clone(), env.clone(), None)
+                };
                 interpreter.assign(env, var, class);
                 return Ok(Value::Void);
             },
@@ -187,6 +199,11 @@ impl Eval for Expr {
                 // Any use of 'this' has already been validated
                 let val = interpreter.lookup(env, this).expect("'this' should always be defined");
                 Ok(val)
+            },
+            Expr::Super(ref superclass, _) => {
+                // Any use of 'super' has already been validated
+                let val = interpreter.lookup(env, superclass).expect("'super' should always be defined");
+                Ok(val.clone())
             },
         }
     }
@@ -303,8 +320,7 @@ impl Eval for Unary {
                     Value::Number(n) => {
                         Ok(Value::Number(-1.0 * n))
                     },
-                    _ => Err(RuntimeError::InvalidOperands("numbers".into()))
-                }
+                    _ => Err(RuntimeError::InvalidOperands("numbers".into())) }
             },
             UnaryOperator::Bang => {
                 if operand.truthy() {

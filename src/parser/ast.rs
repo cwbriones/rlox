@@ -65,7 +65,7 @@ pub enum Stmt {
     Break,
     Function(Rc<RefCell<FunctionDecl>>),
     Return(Expr),
-    Class(Variable, Vec<Rc<RefCell<FunctionDecl>>>),
+    Class(Variable, Vec<Rc<RefCell<FunctionDecl>>>, Option<Variable>),
 }
 
 #[derive(PartialEq, Debug)]
@@ -102,11 +102,11 @@ impl Stmt {
         Stmt::If(cond, Box::new(then_clause), Some(Box::new(else_clause)))
     }
 
-    pub(super) fn class(name: &str, methods: Vec<FunctionDecl>) -> Stmt {
+    pub(super) fn class(name: &str, methods: Vec<FunctionDecl>, superclass: Option<Variable>) -> Stmt {
         let methods = methods.into_iter()
             .map(|d| Rc::new(RefCell::new(d)))
             .collect::<Vec<_>>();
-        Stmt::Class(Variable::new_local(name), methods)
+        Stmt::Class(Variable::new_local(name), methods, superclass)
     }
 
     pub(super) fn function_from_decl(declaration: FunctionDecl) -> Stmt {
@@ -127,6 +127,7 @@ pub enum Expr {
     Get(Box<Expr>, String),
     Set(Box<Expr>, String, Box<Expr>),
     This(Variable, Position),
+    Super(Variable, Position),
 }
 
 impl Expr {

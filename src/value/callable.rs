@@ -23,9 +23,9 @@ impl Callable {
         Callable::Function(LoxFunction::new(declaration, env))
     }
 
-    pub fn new_class(name: &str, methods: Vec<Rc<RefCell<FunctionDecl>>>, env: Environment) -> Self {
+    pub fn new_class(name: &str, methods: Vec<Rc<RefCell<FunctionDecl>>>, env: Environment, superclass: Option<LoxClassHandle>) -> Self {
         Callable::Class(LoxClassHandle {
-            class: Rc::new(LoxClass::new(name, methods, env))
+            class: Rc::new(LoxClass::new(name, methods, env, superclass))
         })
     }
 
@@ -147,6 +147,7 @@ impl Deref for LoxClassHandle {
 pub struct LoxClass {
     name: String,
     methods: HashMap<String, LoxFunction>,
+    superclass: Option<LoxClassHandle>,
 }
 
 type LoxFunctionRef = Rc<RefCell<FunctionDecl>>;
@@ -154,7 +155,7 @@ type LoxFunctionRef = Rc<RefCell<FunctionDecl>>;
 impl LoxClassHandle {
     pub fn call(&self, interpreter: &mut Interpreter, arguments: Vec<Value>) -> Result<Value, RuntimeError> {
         let instance = Value::Instance(LoxInstance::new(self.class.clone()));
-        if let Some(init) = self.method("init") {
+        if let Some(init) = self.init() {
             let bound = init.bind(instance.clone());
             bound.call(interpreter, arguments)?;
         }
@@ -162,12 +163,12 @@ impl LoxClassHandle {
     }
 
     fn arity(&self) -> usize {
-        self.method("init").map(|m| m.arity()).unwrap_or(0)
+        self.init().map(|m| m.arity()).unwrap_or(0)
     }
 }
 
 impl LoxClass {
-    pub fn new(name: &str, declarations: Vec<LoxFunctionRef>, env: Environment) -> Self {
+    pub fn new(name: &str, declarations: Vec<LoxFunctionRef>, env: Environment, superclass: Option<LoxClassHandle>) -> Self {
         let mut methods = HashMap::new();
         for decl in declarations {
             let name = decl.borrow().var.name().into();
@@ -177,6 +178,7 @@ impl LoxClass {
         LoxClass {
             name: name.to_owned(),
             methods: methods,
+            superclass: superclass,
         }
     }
 
@@ -184,10 +186,19 @@ impl LoxClass {
         &self.name
     }
 
+    fn init(&self) -> Option<LoxFunction> {
+        self.methods.get("init").map(Clone::clone)
+    }
+
     pub fn method(&self, name: &str) -> Option<LoxFunction> {
         self.methods
             .get(name)
             .map(Clone::clone)
+            .or_else(|| {
+                // FIXME: Do I need to clone?
+                let superclass = self.superclass.clone();
+                superclass.and_then(|sc| sc.method(name))
+            })
     }
 }
 

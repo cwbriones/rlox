@@ -143,7 +143,15 @@ impl<'t> Parser<'t> {
     }
 
     fn class_decl(&mut self) -> Result<Stmt> {
-        let ident = self.expect(TokenType::Identifier, "Expect class name.")?;
+        // FIXME: These errors are wonky.
+        let ident = self.expect(TokenType::Identifier, "keyword 'class'")?;
+        let superclass = if let TokenType::LessThan = self.peek_type()? {
+            self.advance()?;
+            let superclass_ident = self.expect(TokenType::Identifier, "<")?;
+            Some(Variable::new_local(superclass_ident.value))
+        } else {
+            None
+        };
         self.expect(TokenType::LeftBrace, "class name")?;
         let mut methods = Vec::new();
         loop {
@@ -153,10 +161,10 @@ impl<'t> Parser<'t> {
             methods.push(self.fun_decl()?);
         }
         self.expect(TokenType::RightBrace, "method declarations")?;
-        Ok(Stmt::class(ident.value, methods))
+        Ok(Stmt::class(ident.value, methods, superclass))
     }
 
-    // fn until<P, T>(&mut self, terminator: TokenType, parser: P) -> Result<Vec<T>> 
+    // fn until<P, T>(&mut self, terminator: TokenType, parser: P) -> Result<Vec<T>>
     //     where
     //         P: Fn() -> Result<T>
     // {
@@ -467,6 +475,11 @@ impl<'t> Parser<'t> {
     fn primary(&mut self) -> Result<Expr> {
         let peek_type = self.peek_type()?;
         match peek_type {
+            TokenType::Keyword(Keyword::Super) => {
+                let var = Variable::new_local("super");
+                let previous = self.advance()?;
+                Ok(Expr::Super(var, previous.position))
+            },
             TokenType::Keyword(Keyword::This) => {
                 let var = Variable::new_local("this");
                 let previous = self.advance()?;

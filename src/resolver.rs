@@ -19,6 +19,10 @@ pub enum ResolveError {
     ThisOutsideClass,
     #[fail(display = "Cannot return a value from an initializer")]
     ReturnFromInitializer,
+    #[fail(display = "Cannot use 'super' outside of a class")]
+    SuperOutsideClass,
+    #[fail(display = "Cannot use 'super' in a class with no superclass")]
+    SuperInBaseClass,
 }
 
 pub struct Resolver {
@@ -36,6 +40,7 @@ enum FunctionType {
 
 enum ClassType {
     Class,
+    Subclass,
 }
 
 type Result = ::std::result::Result<(), ResolveError>;
@@ -170,11 +175,15 @@ impl Resolver {
                     None => return Err(ResolveError::ReturnOutsideFunction),
                 }
             },
-            Stmt::Class(ref cls, ref mut methods) => {
+            Stmt::Class(ref cls, ref mut methods, ref mut superclass) => {
                 let enclosing_class = self.class.take();
-                self.class = Some(ClassType::Class);
+                if let &mut Some(ref mut superclass) = superclass {
+                    self.scopes.resolve_local(superclass);
+                    self.class = Some(ClassType::Subclass);
+                } else {
+                    self.class = Some(ClassType::Class);
+                }
                 self.scopes.init(cls.name())?;
-
                 self.scopes.begin();
                 self.scopes.init("this")?;
                 for method in methods {
@@ -254,6 +263,17 @@ impl Resolver {
             Expr::This(ref mut var, _) => {
                 if self.class.is_none() {
                     return Err(ResolveError::ThisOutsideClass);
+                }
+                self.scopes.resolve_local(var);
+            },
+            Expr::Super(ref mut var, _) => {
+                match self.class {
+                    None => Err(ResolveError::SuperOutsideClass),
+                    Some(ClassType::Class) => Err(ResolveError::SuperInBaseClass),
+                    _ => Ok(()),
+                }?;
+                if self.class.is_none() {
+                    return Err(ResolveError::SuperOutsideClass);
                 }
                 self.scopes.resolve_local(var);
             },

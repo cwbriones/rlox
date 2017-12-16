@@ -28,8 +28,14 @@ impl Value {
         Value::Callable(Callable::new_function(declaration, env))
     }
 
-    pub fn new_class(name: &str, methods: Vec<Rc<RefCell<FunctionDecl>>>, env: Environment) -> Self {
-        Value::Callable(Callable::new_class(name, methods, env))
+    pub fn new_class(name: &str, methods: Vec<Rc<RefCell<FunctionDecl>>>, env: Environment, superclass: Option<Value>) -> Self {
+        let superclass = superclass.map(|value| {
+            if let Value::Callable(Callable::Class(class)) = value {
+                return class;
+            }
+            panic!("superclass should have been validated in interpreter")
+        });
+        Value::Callable(Callable::new_class(name, methods, env, superclass))
     }
 
     pub fn builtin_clock() -> Self {
