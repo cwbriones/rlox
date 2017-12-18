@@ -27,7 +27,7 @@ use environment::Variable;
 
 use self::errors::*;
 use self::scanner::Scanner;
-use self::ast::{Expr, Stmt, Literal, FunctionDecl};
+use self::ast::{Expr, Stmt, Literal, FunctionDecl, FunctionStmt};
 use self::scanner::Token;
 use self::scanner::TokenType;
 
@@ -136,7 +136,7 @@ impl<'t> Parser<'t> {
             },
             TokenType::Keyword(Keyword::Fun) => {
                 self.advance()?;
-                self.fun_decl().map(Stmt::function_from_decl)
+                self.function_statement().map(Stmt::Function)
             },
             _ => self.statement(),
         }
@@ -158,34 +158,13 @@ impl<'t> Parser<'t> {
             if let TokenType::RightBrace = self.peek_type()? {
                 break;
             }
-            methods.push(self.fun_decl()?);
+            methods.push(self.function_statement()?);
         }
         self.expect(TokenType::RightBrace, "method declarations")?;
         Ok(Stmt::class(ident.value, methods, superclass))
     }
 
-    // fn until<P, T>(&mut self, terminator: TokenType, parser: P) -> Result<Vec<T>>
-    //     where
-    //         P: Fn() -> Result<T>
-    // {
-    //     let mut all = Vec::new();
-    //     match self.peek_type()? {
-    //         tok if tok == terminator => {},
-    //         _ => {
-    //             loop {
-    //                 all.push(parser()?);
-    //                 if let TokenType::Comma = self.peek_type()? {
-    //                     self.advance()?;
-    //                 } else {
-    //                     break;
-    //                 }
-    //             }
-    //         },
-    //     }
-    //     self.expect(terminator, "")
-    // }
-
-    fn fun_decl(&mut self) -> Result<FunctionDecl> {
+    fn function_statement(&mut self) -> Result<FunctionStmt> {
         // FIXME: These errors are weird.
         let ident = self.expect(TokenType::Identifier, "Expect function name.")?;
         self.expect(TokenType::LeftParen, "function name")?;
@@ -211,7 +190,8 @@ impl<'t> Parser<'t> {
         self.expect(TokenType::RightParen, "function parameters")?;
         self.expect(TokenType::LeftBrace, "function parameters")?;
         let block = self.block()?;
-        Ok(FunctionDecl::new(ident.value, parameters, block))
+        let decl = FunctionDecl::new(parameters, block);
+        Ok(FunctionStmt::new(ident.value, decl))
     }
 
     // varDecl → "var" IDENTIFIER ( "=" expression )? ";" ;

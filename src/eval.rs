@@ -101,10 +101,9 @@ impl Eval for Stmt {
                 debug!("Set var '{:?}' to value {}", var, val);
                 interpreter.assign(env, var, val);
             },
-            Stmt::Function(ref decl) => {
-                let val = Value::new_function(decl.clone(), env.clone());
-                let decl = decl.borrow();
-                interpreter.assign(env, &decl.var, val);
+            Stmt::Function(ref function) => {
+                let val = Value::new_function(function.declaration.clone(), env.clone());
+                interpreter.assign(env, &function.var, val);
             },
             Stmt::Block(ref stmts) => {
                 let mut enclosing = env.extend();

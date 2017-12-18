@@ -48,7 +48,7 @@ impl PartialEq for Environment {
     }
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub struct Variable {
     name: String,
     depth: Option<usize>,

@@ -2,7 +2,7 @@ use std::fmt::Display;
 use std::rc::Rc;
 use std::cell::RefCell;
 
-use parser::ast::FunctionDecl;
+use parser::ast::{FunctionDecl, FunctionStmt};
 use environment::Environment;
 
 use self::callable::Callable;
@@ -28,7 +28,7 @@ impl Value {
         Value::Callable(Callable::new_function(declaration, env))
     }
 
-    pub fn new_class(name: &str, methods: Vec<Rc<RefCell<FunctionDecl>>>, env: Environment, superclass: Option<Value>) -> Self {
+    pub fn new_class(name: &str, methods: Vec<FunctionStmt>, env: Environment, superclass: Option<Value>) -> Self {
         let superclass = superclass.map(|value| {
             if let Value::Callable(Callable::Class(class)) = value {
                 return class;

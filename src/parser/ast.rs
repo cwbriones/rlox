@@ -63,23 +63,35 @@ pub enum Stmt {
     If(Expr, Box<Stmt>, Option<Box<Stmt>>),
     While(Expr, Box<Stmt>),
     Break,
-    Function(Rc<RefCell<FunctionDecl>>),
+    Function(FunctionStmt),
     Return(Expr),
-    Class(Variable, Vec<Rc<RefCell<FunctionDecl>>>, Option<Variable>),
+    Class(Variable, Vec<FunctionStmt>, Option<Variable>),
+}
+
+#[derive(PartialEq, Debug, Clone)]
+pub struct FunctionStmt {
+    pub var: Variable,
+    pub declaration: Rc<RefCell<FunctionDecl>>,
+}
+
+impl FunctionStmt {
+    pub fn new(name: &str, declaration: FunctionDecl) -> Self {
+        FunctionStmt {
+            var: Variable::new_local(name),
+            declaration: Rc::new(RefCell::new(declaration)),
+        }
+    }
 }
 
 #[derive(PartialEq, Debug)]
 pub struct FunctionDecl {
-    pub var: Variable,
     pub parameters: Vec<Variable>,
     pub body: Vec<Stmt>,
 }
 
 impl FunctionDecl {
-    pub(super) fn new(name: &str, parameters: Vec<Variable>, body: Vec<Stmt>) -> Self {
-        let var = Variable::new_local(name.into());
+    pub(super) fn new(parameters: Vec<Variable>, body: Vec<Stmt>) -> Self {
         FunctionDecl {
-            var,
             parameters,
             body,
         }
@@ -102,15 +114,8 @@ impl Stmt {
         Stmt::If(cond, Box::new(then_clause), Some(Box::new(else_clause)))
     }
 
-    pub(super) fn class(name: &str, methods: Vec<FunctionDecl>, superclass: Option<Variable>) -> Stmt {
-        let methods = methods.into_iter()
-            .map(|d| Rc::new(RefCell::new(d)))
-            .collect::<Vec<_>>();
+    pub(super) fn class(name: &str, methods: Vec<FunctionStmt>, superclass: Option<Variable>) -> Stmt {
         Stmt::Class(Variable::new_local(name), methods, superclass)
-    }
-
-    pub(super) fn function_from_decl(declaration: FunctionDecl) -> Stmt {
-        Stmt::Function(Rc::new(RefCell::new(declaration)))
     }
 }
 

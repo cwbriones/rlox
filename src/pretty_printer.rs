@@ -89,9 +89,9 @@ impl PrettyPrinter {
             Stmt::While(ref cond, ref body) => {
                 self.push("while (").push_expr(cond).push(") ").push_stmt(body, indent, true);
             },
-            Stmt::Function(ref decl) => {
-                let decl = decl.borrow();
-                self.push(decl.var.name()).push_char('(');
+            Stmt::Function(ref function) => {
+                let decl = function.declaration.borrow();
+                self.push(function.var.name()).push_char('(');
                 for param in &decl.parameters {
                     self.push(param.name()).push_char(',');
                 }

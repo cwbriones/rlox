@@ -7,6 +7,7 @@ use value::Value;
 use value::LoxInstance;
 use environment::Environment;
 use parser::ast::FunctionDecl;
+use parser::ast::FunctionStmt;
 
 use eval::RuntimeError;
 use eval::Interpreter;
@@ -23,7 +24,7 @@ impl Callable {
         Callable::Function(LoxFunction::new(declaration, env))
     }
 
-    pub fn new_class(name: &str, methods: Vec<Rc<RefCell<FunctionDecl>>>, env: Environment, superclass: Option<LoxClassHandle>) -> Self {
+    pub fn new_class(name: &str, methods: Vec<FunctionStmt>, env: Environment, superclass: Option<LoxClassHandle>) -> Self {
         Callable::Class(LoxClassHandle {
             class: Rc::new(LoxClass::new(name, methods, env, superclass))
         })
@@ -50,8 +51,8 @@ impl Debug for Callable {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
         match *self {
             Callable::Function(ref fun) => {
-                let decl = fun.declaration.borrow();
-                write!(f, "<fn '{}'>", decl.var.name())
+                // FIXME: NAME!!!
+                write!(f, "<fn '???'>")
             },
             Callable::Clock => {
                 write!(f, "<builtin 'clock'>")
@@ -156,8 +157,6 @@ pub struct LoxClass {
     superclass: Option<LoxClassHandle>,
 }
 
-type LoxFunctionRef = Rc<RefCell<FunctionDecl>>;
-
 impl LoxClassHandle {
     pub fn call(&self, interpreter: &mut Interpreter, arguments: Vec<Value>) -> Result<Value, RuntimeError> {
         let instance = Value::Instance(LoxInstance::new(self.class.clone()));
@@ -174,12 +173,13 @@ impl LoxClassHandle {
 }
 
 impl LoxClass {
-    pub fn new(name: &str, declarations: Vec<LoxFunctionRef>, env: Environment, superclass: Option<LoxClassHandle>) -> Self {
+    pub fn new(name: &str, method_stmts: Vec<FunctionStmt>, env: Environment, superclass: Option<LoxClassHandle>) -> Self {
         let mut methods = HashMap::new();
-        for decl in declarations {
-            let name = decl.borrow().var.name().into();
-            let method = LoxFunction::new(decl, env.clone());
-            methods.insert(name, method);
+        for stmt in method_stmts {
+            let mname = stmt.var.name();
+            let fun_decl = stmt.declaration.clone();
+            let method = LoxFunction::new(fun_decl, env.clone());
+            methods.insert(mname.to_owned(), method);
         }
         LoxClass {
             name: name.to_owned(),

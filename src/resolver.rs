@@ -1,6 +1,4 @@
 use std::collections::HashMap;
-use std::rc::Rc;
-use std::cell::RefCell;
 
 use parser::ast::*;
 use environment::Variable;
@@ -144,8 +142,10 @@ impl Resolver {
                 self.scopes.define(var.name());
                 self.scopes.resolve_local(var);
             },
-            Stmt::Function(ref mut decl) => {
-                self.resolve_function(decl, FunctionType::Function)?;
+            Stmt::Function(ref mut function) => {
+                // Define the function itself
+                self.scopes.init(function.var.name())?;
+                self.resolve_function(function, FunctionType::Function)?;
             },
             Stmt::Block(ref mut stmts) => {
                 self.scopes.begin();
@@ -191,7 +191,7 @@ impl Resolver {
                 self.scopes.begin(); // begin 'this' scope
                 self.scopes.init("this")?;
                 for method in methods {
-                    let is_init = method.borrow().var.name() == "init";
+                    let is_init = method.var.name() == "init";
                     if is_init {
                         self.resolve_function(method, FunctionType::Initializer)?;
                     } else {
@@ -208,13 +208,10 @@ impl Resolver {
         Ok(())
     }
 
-    fn resolve_function(&mut self, decl: &mut Rc<RefCell<FunctionDecl>>, function_type: FunctionType) -> Result {
+    fn resolve_function(&mut self, function: &mut FunctionStmt, function_type: FunctionType) -> Result {
         let enclosing_function = self.function.take();
         self.function = Some(function_type);
-
-        let mut decl = decl.borrow_mut();
-        // Define the function itself
-        self.scopes.init(decl.var.name())?;
+        let mut decl = function.declaration.borrow_mut();
 
         self.scopes.begin();
         for param in &decl.parameters {
