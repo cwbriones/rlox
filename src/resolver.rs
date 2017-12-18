@@ -316,6 +316,20 @@ mod tests {
         assert_eq!(err, ResolveError::ReturnFromInitializer);
     }
 
+    #[test]
+    fn super_outside_class() {
+        let prog = "super.init();";
+        let err  = parse_and_resolve(prog).unwrap_err();
+        assert_eq!(err, ResolveError::SuperOutsideClass);
+    }
+
+    #[test]
+    fn super_from_base() {
+        let prog = "class Foo { init() { super.init(); } }";
+        let err  = parse_and_resolve(prog).unwrap_err();
+        assert_eq!(err, ResolveError::SuperInBaseClass);
+    }
+
     fn parse_and_resolve(prog: &str) -> Result {
         let mut stmts = Parser::new(prog).parse().unwrap();
         Resolver::new().resolve(&mut stmts)

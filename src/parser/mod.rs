@@ -803,4 +803,16 @@ mod tests {
         let mut parser = Parser::new(prog);
         parser.parse().unwrap();
     }
+
+    #[test]
+    fn superclass() {
+        let prog = r#"
+            class A < B {
+                init() {}
+            }
+        "#;
+
+        let mut parser = Parser::new(prog);
+        parser.parse().unwrap();
+    }
 }
