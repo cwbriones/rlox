@@ -1,0 +1,39 @@
+class Node {
+    init(item) {
+        this.item = item;
+        this.next = nil;
+    }
+}
+
+class List {
+    init() {
+        this.node = nil;
+    }
+
+    push(item) {
+        var node = Node(item);
+        node.next = this.node;
+        this.node = node;
+        return this;
+    }
+
+    foreach(f) {
+        this.fold(fun(i, acc) { f(i); }, nil);
+    }
+
+    fold(f, init) {
+        var node = this.node;
+        var acc = init;
+        while (node) {
+            acc = f(node.item, acc);
+            node = node.next;
+        }
+        return acc;
+    }
+}
+
+var list = List();
+for (var i = 10; i >= 1; i = i - 1) {
+    list.push(i);
+}
+list.foreach(fun(i) { print i; });
