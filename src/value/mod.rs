@@ -24,8 +24,12 @@ pub enum Value {
 }
 
 impl Value {
-    pub fn new_function(declaration: Rc<RefCell<FunctionDecl>>, env: Environment) -> Self {
-        Value::Callable(Callable::new_function(declaration, env))
+    pub fn new_function(name: &str, declaration: Rc<RefCell<FunctionDecl>>, env: Environment) -> Self {
+        Value::Callable(Callable::new_function(name, declaration, env))
+    }
+
+    pub fn new_lambda(declaration: Rc<RefCell<FunctionDecl>>, env: Environment) -> Self {
+        Value::Callable(Callable::new_lambda(declaration, env))
     }
 
     pub fn new_class(name: &str, methods: Vec<FunctionStmt>, env: Environment, superclass: Option<Value>) -> Self {

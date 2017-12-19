@@ -145,7 +145,8 @@ impl Resolver {
             Stmt::Function(ref mut function) => {
                 // Define the function itself
                 self.scopes.init(function.var.name())?;
-                self.resolve_function(function, FunctionType::Function)?;
+                let mut declaration = function.declaration.borrow_mut();
+                self.resolve_function(&mut *declaration, FunctionType::Function)?;
             },
             Stmt::Block(ref mut stmts) => {
                 self.scopes.begin();
@@ -191,11 +192,14 @@ impl Resolver {
                 self.scopes.begin(); // begin 'this' scope
                 self.scopes.init("this")?;
                 for method in methods {
-                    let is_init = method.var.name() == "init";
-                    if is_init {
-                        self.resolve_function(method, FunctionType::Initializer)?;
+                    let name = method.var.name();
+                    let mut declaration = method.declaration.borrow_mut();
+                    self.scopes.init(name)?;
+
+                    if name == "init" {
+                        self.resolve_function(&mut *declaration, FunctionType::Initializer)?;
                     } else {
-                        self.resolve_function(method, FunctionType::Method)?;
+                        self.resolve_function(&mut *declaration, FunctionType::Method)?;
                     }
                 }
                 self.scopes.end(); // end 'this' scope
@@ -205,22 +209,6 @@ impl Resolver {
                 self.class = enclosing_class;
             },
         }
-        Ok(())
-    }
-
-    fn resolve_function(&mut self, function: &mut FunctionStmt, function_type: FunctionType) -> Result {
-        let enclosing_function = self.function.take();
-        self.function = Some(function_type);
-        let mut decl = function.declaration.borrow_mut();
-
-        self.scopes.begin();
-        for param in &decl.parameters {
-            self.scopes.init(param.name())?;
-        }
-        self.resolve(&mut decl.body)?;
-        self.scopes.end();
-
-        self.function = enclosing_function;
         Ok(())
     }
 
@@ -278,7 +266,26 @@ impl Resolver {
                 }?;
                 self.scopes.resolve_local(var);
             },
+            Expr::Function(ref mut function) => {
+                let mut declaration = function.borrow_mut();
+                self.resolve_function(&mut *declaration, FunctionType::Function)?;
+            },
         }
+        Ok(())
+    }
+
+    fn resolve_function(&mut self, declaration: &mut FunctionDecl, function_type: FunctionType) -> Result {
+        let enclosing_function = self.function.take();
+        self.function = Some(function_type);
+
+        self.scopes.begin();
+        for param in &declaration.parameters {
+            self.scopes.init(param.name())?;
+        }
+        self.resolve(&mut declaration.body)?;
+        self.scopes.end();
+
+        self.function = enclosing_function;
         Ok(())
     }
 }

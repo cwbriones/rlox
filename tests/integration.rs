@@ -58,5 +58,6 @@ define_test!(equality);
 define_test!(native);
 define_test!(class);
 define_test!(inheritance);
+define_test!(lambda);
 
 define_test!(divide_by_zero);

@@ -102,7 +102,8 @@ impl Eval for Stmt {
                 interpreter.assign(env, var, val);
             },
             Stmt::Function(ref function) => {
-                let val = Value::new_function(function.declaration.clone(), env.clone());
+                let name = function.var.name();
+                let val = Value::new_function(name, function.declaration.clone(), env.clone());
                 interpreter.assign(env, &function.var, val);
             },
             Stmt::Block(ref stmts) => {
@@ -219,6 +220,9 @@ impl Eval for Expr {
                     },
                     None => Err(RuntimeError::BadAccess),
                 }
+            },
+            Expr::Function(ref declaration) => {
+                Ok(Value::new_lambda(declaration.clone(), env.clone()))
             },
         }
     }

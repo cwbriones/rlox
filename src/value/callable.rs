@@ -20,8 +20,12 @@ pub enum Callable {
 }
 
 impl Callable {
-    pub fn new_function(declaration: Rc<RefCell<FunctionDecl>>, env: Environment) -> Self {
-        Callable::Function(LoxFunction::new(declaration, env))
+    pub fn new_function(name: &str, declaration: Rc<RefCell<FunctionDecl>>, env: Environment) -> Self {
+        Callable::Function(LoxFunction::new(name, declaration, env))
+    }
+
+    pub fn new_lambda(declaration: Rc<RefCell<FunctionDecl>>, env: Environment) -> Self {
+        Callable::Function(LoxFunction::new_lambda(declaration, env))
     }
 
     pub fn new_class(name: &str, methods: Vec<FunctionStmt>, env: Environment, superclass: Option<LoxClassHandle>) -> Self {
@@ -51,8 +55,11 @@ impl Debug for Callable {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
         match *self {
             Callable::Function(ref fun) => {
-                // FIXME: NAME!!!
-                write!(f, "<fn '???'>")
+                if let Some(ref name) = fun.name {
+                    write!(f, "<fn '{}'>", name)
+                } else {
+                    write!(f, "<fn>")
+                }
             },
             Callable::Clock => {
                 write!(f, "<builtin 'clock'>")
@@ -66,13 +73,24 @@ impl Debug for Callable {
 
 #[derive(Clone)]
 pub struct LoxFunction {
+    name: Option<String>,
     declaration: Rc<RefCell<FunctionDecl>>,
     closure: Environment,
 }
 
 impl LoxFunction {
-    fn new(declaration: Rc<RefCell<FunctionDecl>>, closure: Environment) -> Self {
+    fn new(name: &str, declaration: Rc<RefCell<FunctionDecl>>, closure: Environment) -> Self {
+        let name = Some(name.to_owned());
         LoxFunction {
+            name,
+            declaration,
+            closure,
+        }
+    }
+
+    fn new_lambda(declaration: Rc<RefCell<FunctionDecl>>, closure: Environment) -> Self {
+        LoxFunction {
+            name: None,
             declaration,
             closure,
         }
@@ -82,6 +100,7 @@ impl LoxFunction {
         let mut closure = self.closure.extend();
         closure.set_at("this", this, 0);
         LoxFunction {
+            name: self.name.clone(),
             declaration: self.declaration.clone(),
             closure: closure,
         }
@@ -178,7 +197,7 @@ impl LoxClass {
         for stmt in method_stmts {
             let mname = stmt.var.name();
             let fun_decl = stmt.declaration.clone();
-            let method = LoxFunction::new(fun_decl, env.clone());
+            let method = LoxFunction::new(mname, fun_decl, env.clone());
             methods.insert(mname.to_owned(), method);
         }
         LoxClass {

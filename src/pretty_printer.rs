@@ -179,6 +179,20 @@ impl PrettyPrinter {
             },
             Expr::This(_, _) => { self.push("this"); },
             Expr::Super(_, _, ref method) => { self.push("super").push_char('.').push(method); },
+            Expr::Function(ref function) => {
+                let decl = function.borrow();
+                for param in &decl.parameters {
+                    self.push(param.name()).push_char(',');
+                }
+                self.pop();
+                self.push_char('{');
+                // FIXME: indent
+                let indent = 0;
+                for stmt in &decl.body {
+                    self.push_stmt(stmt, 0, true);
+                }
+                self.newline(0).push_char('}');
+            },
         }
         self
     }

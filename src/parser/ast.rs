@@ -133,6 +133,7 @@ pub enum Expr {
     Set(Box<Expr>, String, Box<Expr>),
     This(Variable, Position),
     Super(Variable, Position, String),
+    Function(Rc<RefCell<FunctionDecl>>),
 }
 
 impl Expr {
@@ -174,6 +175,10 @@ impl Expr {
     pub(super) fn set(expr: Box<Expr>, name: String, value: Expr) -> Self {
         // FIXME: This is strangely coupled
         Expr::Set(expr, name, Box::new(value))
+    }
+
+    pub(super) fn function(declaration: FunctionDecl) -> Self {
+        Expr::Function(Rc::new(RefCell::new(declaration)))
     }
 }
 

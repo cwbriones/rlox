@@ -136,7 +136,18 @@ impl<'t> Parser<'t> {
             },
             TokenType::Keyword(Keyword::Fun) => {
                 self.advance()?;
-                self.function_statement().map(Stmt::Function)
+                if let TokenType::Identifier = self.peek_type()? {
+                    let ident = self.advance()?;
+                    let decl = self.function_declaration()?;
+                    Ok(Stmt::Function(FunctionStmt::new(ident.value, decl)))
+                } else {
+                    // TODO: Unify the parsing. If we could scan two tokens
+                    // ahead we could fallback to a expression statement
+                    // and this would already be handled.
+                    let decl = self.function_declaration()?;
+                    self.expect(TokenType::Semicolon, "lambda expression")?;
+                    Ok(Stmt::Expr(Expr::function(decl)))
+                }
             },
             _ => self.statement(),
         }
@@ -165,8 +176,13 @@ impl<'t> Parser<'t> {
     }
 
     fn function_statement(&mut self) -> Result<FunctionStmt> {
-        // FIXME: These errors are weird.
         let ident = self.expect(TokenType::Identifier, "Expect function name.")?;
+        let decl = self.function_declaration()?;
+        Ok(FunctionStmt::new(ident.value, decl))
+    }
+
+    fn function_declaration(&mut self) -> Result<FunctionDecl> {
+        // FIXME: These errors are weird.
         self.expect(TokenType::LeftParen, "function name")?;
         let mut parameters = Vec::new();
         match self.peek_type()? {
@@ -190,8 +206,7 @@ impl<'t> Parser<'t> {
         self.expect(TokenType::RightParen, "function parameters")?;
         self.expect(TokenType::LeftBrace, "function parameters")?;
         let block = self.block()?;
-        let decl = FunctionDecl::new(parameters, block);
-        Ok(FunctionStmt::new(ident.value, decl))
+        Ok(FunctionDecl::new(parameters, block))
     }
 
     // varDecl → "var" IDENTIFIER ( "=" expression )? ";" ;
@@ -498,6 +513,11 @@ impl<'t> Parser<'t> {
                 let var = Variable::new_global(token.value.into());
                 Ok(Expr::Var(var))
             },
+            TokenType::Keyword(Keyword::Fun) => {
+                self.advance()?;
+                let declaration = self.function_declaration()?;
+                Ok(Expr::function(declaration))
+            },
             _ => Err(SyntaxError::PrimaryFailure)
         }
     }
@@ -790,6 +810,17 @@ mod tests {
             class A < B {
                 init() {}
             }
+        "#;
+
+        let mut parser = Parser::new(prog);
+        parser.parse().unwrap();
+    }
+
+    #[test]
+    fn lambda() {
+        let prog = r#"
+            var p = fun () { print x; };
+            fun () {};
         "#;
 
         let mut parser = Parser::new(prog);
