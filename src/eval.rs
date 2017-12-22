@@ -133,12 +133,14 @@ impl Eval for Stmt {
                 interpreter.push_return(retval);
                 return Err(RuntimeError::Return);
             },
-            Stmt::Class(ref var, ref methods, ref sc_var) => {
+            Stmt::Class(ref class) => {
                 // TODO: Clean this up.
-                let class = if let &Some(ref sc_var) = sc_var {
+                let var = &class.var;
+                let methods = &class.methods;
+                let class = if let Some(ref sc_var) = class.superclass {
                     let superclass = match interpreter.lookup(env, sc_var) {
                         Some(v) => v.clone(),
-                        None => return Err(RuntimeError::UndefinedVariable(var.name().into())),
+                        None => return Err(RuntimeError::UndefinedVariable(sc_var.name().into())),
                     };
                     if superclass.clone().into_class().is_none() {
                         return Err(RuntimeError::SuperNotAClass);

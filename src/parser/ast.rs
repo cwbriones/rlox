@@ -65,7 +65,15 @@ pub enum Stmt {
     Break,
     Function(FunctionStmt),
     Return(Expr),
-    Class(Variable, Vec<FunctionStmt>, Option<Variable>),
+    Class(Class),
+}
+
+#[derive(PartialEq, Debug)]
+pub struct Class {
+    pub var: Variable,
+    pub methods: Vec<FunctionStmt>,
+    pub class_methods: Vec<FunctionStmt>,
+    pub superclass: Option<Variable>,
 }
 
 #[derive(PartialEq, Debug, Clone)]
@@ -114,8 +122,14 @@ impl Stmt {
         Stmt::If(cond, Box::new(then_clause), Some(Box::new(else_clause)))
     }
 
-    pub(super) fn class(name: &str, methods: Vec<FunctionStmt>, superclass: Option<Variable>) -> Stmt {
-        Stmt::Class(Variable::new_local(name), methods, superclass)
+    pub(super) fn class(name: &str, methods: Vec<FunctionStmt>, class_methods: Vec<FunctionStmt>, superclass: Option<Variable>) -> Stmt {
+        let var = Variable::new_local(name);
+        Stmt::Class(Class {
+            var,
+            methods,
+            class_methods,
+            superclass,
+        })
     }
 }
 

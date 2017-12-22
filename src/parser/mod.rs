@@ -165,14 +165,20 @@ impl<'t> Parser<'t> {
         };
         self.expect(TokenType::LeftBrace, "class name")?;
         let mut methods = Vec::new();
+        let mut class_methods = Vec::new();
         loop {
             if let TokenType::RightBrace = self.peek_type()? {
                 break;
             }
-            methods.push(self.function_statement()?);
+            if let TokenType::Keyword(Keyword::Class) = self.peek_type()? {
+                self.advance()?;
+                class_methods.push(self.function_statement()?);
+            } else {
+                methods.push(self.function_statement()?);
+            }
         }
         self.expect(TokenType::RightBrace, "method declarations")?;
-        Ok(Stmt::class(ident.value, methods, superclass))
+        Ok(Stmt::class(ident.value, methods, class_methods, superclass))
     }
 
     fn function_statement(&mut self) -> Result<FunctionStmt> {
@@ -796,6 +802,10 @@ mod tests {
             class Cake {
                 bake() {
                     print "Baking...";
+                }
+
+                class classMethod() {
+                    print "Static...";
                 }
             }
         "#;
