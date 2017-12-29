@@ -1,8 +1,10 @@
-use parser::ast::{Stmt, Expr, Literal};
+use environment::Variable;
+use parser::ast::{FunctionStmt, Stmt, Expr, Literal};
 
 pub struct PrettyPrinter {
     inner: String,
     indent_size: usize,
+    indent: usize,
 }
 
 impl PrettyPrinter {
@@ -10,191 +12,244 @@ impl PrettyPrinter {
         PrettyPrinter {
             inner: String::new(),
             indent_size: 4,
+            indent: 0,
         }
     }
 
     pub fn pretty_print(mut self, stmts: &[Stmt]) -> String {
         let mut iter = stmts.iter();
         if let Some(stmt) = iter.next() {
-            self.push_stmt(stmt, 0, false);
+            // no newline
+            self.print(stmt);
         }
         for stmt in iter {
-            self.push_stmt(stmt, 0, true);
+            // newline
+            self.newline().print(stmt);
         }
         self.inner
     }
 
-    fn pop<'a>(&mut self) -> &mut Self {
-        self.inner.pop();
+    fn print<'a, T>(&mut self, t: T) -> &mut Self
+        where T: PrintInto,
+    {
+        t.print_into(self);
         self
     }
 
-    fn push<'a, S>(&mut self, s: S) -> &mut Self where S: AsRef<str> {
-        self.inner.push_str(s.as_ref());
-        self
-    }
-
-    fn push_char(&mut self, c: char) -> &mut Self {
-        self.inner.push(c);
-        self
-    }
-
-    fn push_stmt(&mut self, stmt: &Stmt, indent: usize, newline: bool) {
-        let indent_size = self.indent_size;
-        if newline {
-            self.newline(indent);
+    fn block<P>(&mut self, stmts: &[P]) -> &mut Self
+        where P: PrintInto
+    {
+        self.print('{');
+        self.indent += self.indent_size;
+        for stmt in stmts {
+            self.newline().print(stmt);
         }
-        match *stmt {
-            Stmt::Expr(ref expr) => {
-                self.push_expr(expr).push_char(';');
-            },
-            Stmt::Print(ref expr) => {
-                self.push("print ").push_expr(expr).push_char(';');
-            },
-            Stmt::Var(ref var, ref expr) => {
-                self.push("var ").push(var.name()).push(" = ").push_expr(expr).push_char(';');
-            },
-            Stmt::Block(ref stmts) => {
-                self.push_char('{');
-                for stmt in stmts {
-                    self.push_stmt(stmt, indent + indent_size, true);
-                }
-                self.newline(indent).push_char('}');
-            },
-            Stmt::Break => {
-                self.push("break;");
-            },
-            Stmt::If(ref cond, ref then_clause, ref else_clause) => {
-                self.push("if (").push_expr(cond).push_char(')');
-
-                let then_block = is_block(then_clause);
-                if then_block {
-                    self.push_char(' ').push_stmt(then_clause, indent, false);
-                } else {
-                    self.push_stmt(then_clause, indent + indent_size, true);
-                }
-                if let &Some(ref else_clause) = else_clause {
-                    if then_block {
-                        self.push_char(' ');
-                    } else {
-                        self.newline(indent);
-                    }
-                    if is_block(else_clause) {
-                        self.push("else ").push_stmt(else_clause, indent, false);
-                    } else {
-                        self.push("else").push_stmt(else_clause, indent + indent_size, true);
-                    }
-                }
-            },
-            Stmt::While(ref cond, ref body) => {
-                self.push("while (").push_expr(cond).push(") ").push_stmt(body, indent, true);
-            },
-            Stmt::Function(ref function) => {
-                let decl = function.declaration.borrow();
-                self.push(function.var.name()).push_char('(');
-                for param in &decl.parameters {
-                    self.push(param.name()).push_char(',');
-                }
-                self.pop();
-                self.push_char('{');
-                for stmt in &decl.body {
-                    self.push_stmt(stmt, indent + indent_size, true);
-                }
-                self.newline(indent).push_char('}');
-            },
-            Stmt::Return(ref expr) => {
-                self.push("return ").push_expr(expr).push_char(';');
-            },
-            Stmt::Class(ref cls) => {
-                self.push("class ").push(cls.var.name());
-                if let Some(ref superclass) = cls.superclass {
-                    self.push(" < ").push(superclass.name());
-                }
-                self.push("{}");
-            },
-        }
+        self.indent -= self.indent_size;
+        self.newline().print('}');
+        self
     }
 
-    fn newline(&mut self, indent: usize) -> &mut Self {
-        self.push_char('\n');
-        for _ in ::std::iter::repeat(' ').take(indent) {
-            self.push_char(' ');
+    fn parameters<P>(&mut self, params: &[P]) -> &mut Self
+        where P: PrintInto
+    {
+        self.print('(');
+        if !params.is_empty() {
+            let mut iter = params.iter();
+            {
+                let take = iter.by_ref().take(params.len() - 1);
+                for param in take {
+                    self.print(param).print(", ");
+                }
+            }
+            if let Some(param) = iter.next() {
+                self.print(param);
+            }
+        }
+        self.print(')');
+        self
+    }
+
+    fn newline(&mut self) -> &mut Self {
+        self.print('\n');
+        for _ in ::std::iter::repeat(' ').take(self.indent) {
+            self.print(' ');
         }
         self
     }
+}
 
-    fn push_expr(&mut self, expr: &Expr) -> &mut Self {
-        match *expr {
+trait PrintInto {
+    fn print_into(&self, pp: &mut PrettyPrinter);
+}
+
+impl<P> PrintInto for Box<P> where P: PrintInto {
+    fn print_into(&self, pp: &mut PrettyPrinter) {
+        self.as_ref().print_into(pp);
+    }
+}
+
+impl<'a, P> PrintInto for &'a P where P: PrintInto {
+    fn print_into(&self, pp: &mut PrettyPrinter) {
+        (*self).print_into(pp);
+    }
+}
+
+impl<'a> PrintInto for &'a str {
+    fn print_into(&self, pp: &mut PrettyPrinter) {
+        pp.inner.push_str(self);
+    }
+}
+
+impl PrintInto for String {
+    fn print_into(&self, pp: &mut PrettyPrinter) {
+        pp.inner.push_str(self);
+    }
+}
+
+impl PrintInto for char {
+    fn print_into(&self, pp: &mut PrettyPrinter) {
+        pp.inner.push(*self);
+    }
+}
+
+impl PrintInto for Variable {
+    fn print_into(&self, pp: &mut PrettyPrinter) {
+        pp.print(self.name());
+    }
+}
+
+impl<'a> PrintInto for Expr {
+    fn print_into(&self, pp: &mut PrettyPrinter) {
+        match *self {
             Expr::Binary(ref bin) => {
                 let op = bin.operator;
-                self.push_expr(&bin.lhs).push_char(' ').push(op.to_str())
-                    .push_char(' ').push_expr(&bin.rhs);
+                pp.print(&bin.lhs).print(' ').print(op.to_str())
+                  .print(' ').print(&bin.rhs);
             },
             Expr::Logical(ref logical) => {
                 let op = logical.operator;
-                self.push_expr(&logical.lhs).push_char(' ').push(op.to_str())
-                    .push_char(' ').push_expr(&logical.rhs);
+                pp.print(&logical.lhs).print(' ').print(op.to_str())
+                    .print(' ')
+                    .print(&logical.rhs);
             },
             Expr::Grouping(ref group) => {
-                self.push_char('(').push_expr(group).push_char(')');
+                pp.print('(').print(group).print(')');
             },
             Expr::Literal(ref lit) => {
                 match *lit {
-                    Literal::Number(n) => { self.push(n.to_string()); },
+                    Literal::Number(n) => { pp.print(&n.to_string()); },
                     Literal::String(ref s) => {
-                        self.push_char('"').push(s).push_char('"');
+                        pp.print('"').print(s).print('"');
                     }
-                    Literal::True => { self.push("true"); },
-                    Literal::False => { self.push("false"); },
-                    Literal::Nil => { self.push("nil"); },
+                    Literal::True => { pp.print("true"); },
+                    Literal::False => { pp.print("false"); },
+                    Literal::Nil => { pp.print("nil"); },
                 }
             },
             Expr::Unary(ref unary) => {
                 let op = unary.operator;
-                self.push(op.to_str()).push_expr(&unary.unary);
+                pp.print(op.to_str()).print(&unary.unary);
             },
             Expr::Var(ref var) => {
-                self.push(var.name());
+                pp.print(var.name());
             },
             Expr::Assign(ref var, ref expr) => {
-                self.push(var.name()).push(" = ").push_expr(expr);
+                pp.print(var.name()).print(" = ").print(&expr);
             },
             Expr::Call(ref call) => {
-                self.push_expr(&call.callee).push_char(')');
-                for arg in &call.arguments {
-                    self.push_expr(arg).push_char(',');
-                }
-                self.pop();
+                pp.print(&call.callee).parameters(&call.arguments);
             },
             Expr::Get(ref lhs, ref property) => {
-                self.push_expr(lhs).push_char('.').push(property);
+                pp.print(lhs).print('.').print(property);
             },
             Expr::Set(ref expr, ref name, ref value) => {
-                self.push_expr(expr)
-                    .push_char('.')
-                    .push(name)
-                    .push(" = ")
-                    .push_expr(value)
-                    .push_char(';');
+                pp.print(expr)
+                    .print('.')
+                    .print(name)
+                    .print(" = ")
+                    .print(value);
             },
-            Expr::This(_, _) => { self.push("this"); },
-            Expr::Super(_, _, ref method) => { self.push("super").push_char('.').push(method); },
+            Expr::This(_, _) => { pp.print("this"); },
+            Expr::Super(_, _, ref method) => { pp.print("super").print('.').print(method); },
             Expr::Function(ref function) => {
                 let decl = function.borrow();
-                for param in &decl.parameters {
-                    self.push(param.name()).push_char(',');
-                }
-                self.pop();
-                self.push_char('{');
-                // FIXME: indent
-                let indent = 0;
-                for stmt in &decl.body {
-                    self.push_stmt(stmt, 0, true);
-                }
-                self.newline(0).push_char('}');
+                pp.print("fun").parameters(&decl.parameters).print(' ').block(&decl.body);
             },
         }
-        self
+    }
+}
+
+impl PrintInto for FunctionStmt {
+    fn print_into(&self, pp: &mut PrettyPrinter) {
+        let decl = self.declaration.borrow();
+        pp.print(self.var.name())
+            .parameters(&decl.parameters)
+            .print(' ')
+            .block(&decl.body);
+    }
+}
+
+impl PrintInto for Stmt {
+    fn print_into(&self, pp: &mut PrettyPrinter) {
+        match *self {
+            Stmt::Expr(ref expr) => {
+                pp.print(&*expr).print(';');
+            },
+            Stmt::Print(ref expr) => {
+                pp.print("print ").print(&expr).print(';');
+            },
+            Stmt::Var(ref var, ref expr) => {
+                pp.print("var ").print(var.name()).print(" = ").print(&expr).print(';');
+            },
+            Stmt::Block(ref stmts) => {
+                pp.block(stmts);
+            },
+            Stmt::Break => {
+                pp.print("break;");
+            },
+            Stmt::If(ref cond, ref then_clause, ref else_clause) => {
+                pp.print("if (").print(cond).print(')');
+
+                let then_block = is_block(then_clause);
+                if then_block {
+                    pp.print(' ').print(then_clause);
+                } else {
+                    pp.indent += pp.indent_size;
+                    pp.newline().print(&then_clause);
+                    pp.indent -= pp.indent_size;
+                }
+                if let &Some(ref else_clause) = else_clause {
+                    if then_block {
+                        pp.print(' ');
+                    } else {
+                        pp.newline();
+                    }
+                    if is_block(else_clause) {
+                        pp.print("else ").print(&else_clause);
+                    } else {
+                        pp.indent += pp.indent_size;
+                        pp.print("else").newline().print(&else_clause);
+                        pp.indent -= pp.indent_size;
+                    }
+                }
+            },
+            Stmt::While(ref cond, ref body) => {
+                pp.print("while (").print(cond).print(") ").newline().print(&body);
+            },
+            Stmt::Function(ref function) => {
+                pp.print("fun ").print(function);
+            },
+            Stmt::Return(ref expr) => {
+                pp.print("return ").print(expr).print(';');
+            },
+            Stmt::Class(ref cls) => {
+                pp.print("class ").print(&cls.var).print(' ');
+                if let Some(ref superclass) = cls.superclass {
+                    pp.print("< ").print(superclass).print(' ');
+                }
+                pp.block(&cls.methods);
+            },
+        }
     }
 }
 
@@ -202,5 +257,12 @@ fn is_block(stmt: &Stmt) -> bool {
     match *stmt {
         Stmt::Block(_) => true,
         _ => false,
+    }
+}
+
+fn as_block(stmt: &Stmt) -> Option<&[Stmt]> {
+    match *stmt {
+        Stmt::Block(ref block) => Some(block),
+        _ => None,
     }
 }

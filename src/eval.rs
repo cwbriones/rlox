@@ -1,6 +1,9 @@
 use environment::{Variable, Environment};
 use parser::ast::*;
+
 use value::Value;
+use value::Access;
+use value::LoxClass;
 
 #[derive(Debug, Fail)]
 pub enum RuntimeError {
@@ -135,6 +138,8 @@ impl Eval for Stmt {
             },
             Stmt::Class(ref class) => {
                 // TODO: Clean this up.
+                // Initiate metaclass
+                // let class_methods = &class.class_methods;
                 let var = &class.var;
                 let methods = &class.methods;
                 let class = if let Some(ref sc_var) = class.superclass {
@@ -142,16 +147,14 @@ impl Eval for Stmt {
                         Some(v) => v.clone(),
                         None => return Err(RuntimeError::UndefinedVariable(sc_var.name().into())),
                     };
-                    if superclass.clone().into_class().is_none() {
-                        return Err(RuntimeError::SuperNotAClass);
-                    }
+                    let superclass = superclass.clone().into_class().ok_or(RuntimeError::SuperNotAClass)?;
                     let mut env = env.extend();
-                    env.set_at("super", superclass.clone(), 0);
-                    Value::new_class(var.name(), methods.clone(), env, Some(superclass))
+                    env.set_at("super", superclass.clone().into(), 0);
+                    LoxClass::new_handle(var.name(), methods.clone(), env, Some(superclass))
                 } else {
-                    Value::new_class(var.name(), methods.clone(), env.clone(), None)
+                    LoxClass::new_handle(var.name(), methods.clone(), env.clone(), None)
                 };
-                interpreter.assign(env, var, class);
+                interpreter.assign(env, var, class.into());
                 return Ok(Value::Void);
             },
         }
@@ -185,10 +188,14 @@ impl Eval for Expr {
             },
             Expr::Call(ref inner) => inner.eval(interpreter, env),
             Expr::Get(ref expr, ref property) => {
-                if let Value::Instance(ref mut instance) = expr.eval(interpreter, env)? {
-                    Ok(instance.get(property).unwrap_or(Value::Nil))
-                } else {
-                    Err(RuntimeError::BadAccess)
+                match expr.eval(interpreter, env)? {
+                    Value::Instance(ref instance) => {
+                        Ok(instance.get(property).unwrap_or(Value::Nil))
+                    },
+                    // Value::Callable(Callable::Class(ref class)) => {
+                    //     Ok(Value::Nil)
+                    // },
+                    _ => Err(RuntimeError::BadAccess),
                 }
             },
             Expr::Set(ref lhs, ref name, ref value) => {

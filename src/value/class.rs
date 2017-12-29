@@ -1,12 +1,10 @@
-use std::fmt::Debug;
 use std::rc::Rc;
-use std::cell::RefCell;
 use std::collections::HashMap;
 
 use value::Value;
 use value::LoxInstance;
+use value::LoxFunction;
 use environment::Environment;
-use parser::ast::FunctionDecl;
 use parser::ast::FunctionStmt;
 
 use eval::RuntimeError;
@@ -16,6 +14,14 @@ use eval::Interpreter;
 #[derive(Clone)]
 pub struct LoxClassHandle {
     class: Rc<LoxClass>,
+}
+
+impl LoxClassHandle {
+    pub fn new(class: LoxClass) -> Self {
+        LoxClassHandle {
+            class: Rc::new(class),
+        }
+    }
 }
 
 use std::ops::Deref;
@@ -45,13 +51,17 @@ impl LoxClassHandle {
         Ok(instance)
     }
 
-    fn arity(&self) -> usize {
+    pub fn arity(&self) -> usize {
         self.init().map(|m| m.arity()).unwrap_or(0)
     }
 }
 
 impl LoxClass {
-    pub fn new(name: &str, method_stmts: Vec<FunctionStmt>, env: Environment, superclass: Option<LoxClassHandle>) -> Self {
+    pub fn new_handle(name: &str, method_stmts: Vec<FunctionStmt>, env: Environment, superclass: Option<LoxClassHandle>) -> LoxClassHandle {
+        LoxClassHandle::new(Self::new(name, method_stmts, env, superclass))
+    }
+
+    pub(super) fn new(name: &str, method_stmts: Vec<FunctionStmt>, env: Environment, superclass: Option<LoxClassHandle>) -> Self {
         let mut methods = HashMap::new();
         for stmt in method_stmts {
             let mname = stmt.var.name();

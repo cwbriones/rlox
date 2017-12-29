@@ -2,9 +2,9 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::cell::RefCell;
 
+use super::Access;
 use super::Value;
-use super::callable::Callable;
-use super::callable::LoxClass;
+use super::LoxClass;
 
 #[derive(Clone)]
 pub struct LoxInstance {
@@ -20,22 +20,6 @@ impl LoxInstance {
             fields,
         }
     }
-
-    pub fn get(&self, field: &str) -> Option<Value> {
-        self.class
-            .method(field)
-            .map(|m| {
-                let this = Value::Instance(self.clone());
-                let bound = m.bind(this);
-                Value::Callable(Callable::Function(bound))
-            })
-            .or_else(|| self.fields.borrow().get(field).map(Clone::clone))
-    }
-
-    pub fn set(&self, field: &str, value: Value) {
-        let mut fields = self.fields.borrow_mut();
-        fields.insert(field.into(), value);
-    }
 }
 
 impl PartialEq for LoxInstance {
@@ -47,5 +31,22 @@ impl PartialEq for LoxInstance {
 impl ::std::fmt::Debug for LoxInstance {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
         write!(f, "'{}' instance", self.class.name())
+    }
+}
+
+impl Access for LoxInstance {
+    fn get(&self, field: &str) -> Option<Value> {
+        self.class
+            .method(field)
+            .map(|m| {
+                let this = Value::Instance(self.clone());
+                m.bind(this).into()
+            })
+            .or_else(|| self.fields.borrow().get(field).map(Clone::clone))
+    }
+
+    fn set(&mut self, field: &str, value: Value) {
+        let mut fields = self.fields.borrow_mut();
+        fields.insert(field.into(), value);
     }
 }
