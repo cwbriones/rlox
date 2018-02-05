@@ -105,9 +105,9 @@ impl PrettyPrinter {
             Stmt::Return(ref expr) => {
                 self.push("return ").push_expr(expr).push_char(';');
             },
-            Stmt::Class(ref cls, ref _methods, ref superclass) => {
-                self.push("class ").push(cls.name());
-                if let &Some(ref superclass) = superclass {
+            Stmt::Class(ref cls) => {
+                self.push("class ").push(cls.var.name());
+                if let Some(ref superclass) = cls.superclass {
                     self.push(" < ").push(superclass.name());
                 }
                 self.push("{}");

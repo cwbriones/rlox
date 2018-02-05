@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 
 use parser::ast::*;
-use environment::Variable;
 
 #[derive(Debug, Fail, PartialEq)]
 pub enum ResolveError {
@@ -178,10 +177,10 @@ impl Resolver {
                     None => return Err(ResolveError::ReturnOutsideFunction),
                 }
             },
-            Stmt::Class(ref cls, ref mut methods, ref mut superclass) => {
-                self.scopes.init(cls.name())?;
+            Stmt::Class(ref mut class_decl) => {
+                self.scopes.init(class_decl.var.name())?;
                 let enclosing_class = self.class.take();
-                if let &mut Some(ref mut superclass) = superclass {
+                if let Some(ref mut superclass) = class_decl.superclass {
                     self.class = Some(ClassType::Subclass);
                     self.scopes.resolve_local(superclass);
                     self.scopes.begin(); // begin 'super' scope
@@ -191,7 +190,7 @@ impl Resolver {
                 }
                 self.scopes.begin(); // begin 'this' scope
                 self.scopes.init("this")?;
-                for method in methods {
+                for method in &class_decl.methods {
                     let name = method.var.name();
                     let mut declaration = method.declaration.borrow_mut();
                     self.scopes.init(name)?;
@@ -203,7 +202,7 @@ impl Resolver {
                     }
                 }
                 self.scopes.end(); // end 'this' scope
-                if superclass.is_some() {
+                if class_decl.superclass.is_some() {
                     self.scopes.end(); // end 'super' scope
                 }
                 self.class = enclosing_class;

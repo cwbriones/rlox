@@ -4,6 +4,8 @@ use value::Value;
 use std::rc::Rc;
 use std::cell::RefCell;
 
+use parser::ast::Variable;
+
 struct EnvNode {
     map: BTreeMap<String, Value>,
     parent: Option<Rc<RefCell<EnvNode>>>,
@@ -45,40 +47,6 @@ impl PartialEq for Environment {
         let ptr = &*self.node as *const _;
         let other_ptr = &*other.node as *const _;
         ptr == other_ptr
-    }
-}
-
-#[derive(PartialEq, Debug, Clone)]
-pub struct Variable {
-    name: String,
-    depth: Option<usize>,
-}
-
-impl Variable {
-    pub fn new_global(name: &str) -> Self {
-        Variable {
-            name: name.to_owned(),
-            depth: None,
-        }
-    }
-
-    pub fn new_local(name: &str) -> Self {
-        Variable {
-            name: name.to_owned(),
-            depth: Some(0),
-        }
-    }
-
-    pub fn resolve(&mut self, depth: usize) {
-        self.depth = Some(depth);
-    }
-
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-
-    pub fn depth(&self) -> Option<usize> {
-        self.depth
     }
 }
 

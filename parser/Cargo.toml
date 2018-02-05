@@ -1,11 +1,7 @@
 [package]
-name = "rlox"
+name = "parser"
 version = "0.1.0"
 authors = ["Christian Briones <cwbriones@gmail.com>"]
 
 [dependencies]
-rustyline = "*"
-env_logger = "*"
-log = "*"
 failure = "0.1.1"
-parser = { path = "parser" }

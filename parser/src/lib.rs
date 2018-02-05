@@ -5,7 +5,7 @@
 /// The currently supported grammar that we use, taken straight from
 /// Crafting Interpreters.
 ///
-/// ```
+///
 /// expression → equality
 /// assignment → identifier "=" assignment
 ///            | logic_or ;
@@ -19,15 +19,16 @@
 ///            | primary
 /// primary    → NUMBER | STRING | "false" | "true" | "nil"
 ///            | "(" expression ")"
-/// ```
+///
+
+#[macro_use]
+extern crate failure;
 
 use std::iter::Peekable;
 
-use environment::Variable;
-
 use self::errors::*;
 use self::scanner::Scanner;
-use self::ast::{Expr, Stmt, Literal, FunctionDecl, FunctionStmt};
+use self::ast::{Expr, Stmt, Literal, FunctionDecl, FunctionStmt, Variable};
 use self::scanner::Token;
 use self::scanner::TokenType;
 
@@ -36,6 +37,7 @@ pub use self::scanner::Position;
 
 pub mod ast;
 pub mod errors;
+mod ext;
 mod scanner;
 
 const MAX_NUM_PARAMETERS: usize = 8;
@@ -97,18 +99,13 @@ impl<'t> Parser<'t> {
     }
 
     pub fn parse(&mut self) -> ::std::result::Result<Vec<Stmt>, Vec<SyntaxError>> {
-        let mut statements = Vec::new();
-        let mut errors = Vec::new();
-        for res in self {
-            match res {
-                Ok(stmt) => statements.push(stmt),
-                Err(err) => errors.push(err),
-            }
+        use ext::Partition;
+
+        let (stmts, errs): (Vec<Stmt>, Vec<SyntaxError>) = Partition::partition(self);
+        if !errs.is_empty() {
+            return Err(errs);
         }
-        if !errors.is_empty() {
-            return Err(errors);
-        }
-        Ok(statements)
+        Ok(stmts)
     }
 
     // program → declaration* eof ;
@@ -165,14 +162,20 @@ impl<'t> Parser<'t> {
         };
         self.expect(TokenType::LeftBrace, "class name")?;
         let mut methods = Vec::new();
+        let mut class_methods = Vec::new();
         loop {
             if let TokenType::RightBrace = self.peek_type()? {
                 break;
             }
-            methods.push(self.function_statement()?);
+            if let TokenType::Keyword(Keyword::Class) = self.peek_type()? {
+                self.advance()?;
+                class_methods.push(self.function_statement()?);
+            } else {
+                methods.push(self.function_statement()?);
+            }
         }
         self.expect(TokenType::RightBrace, "method declarations")?;
-        Ok(Stmt::class(ident.value, methods, superclass))
+        Ok(Stmt::class(ident.value, methods, class_methods, superclass))
     }
 
     fn function_statement(&mut self) -> Result<FunctionStmt> {
@@ -796,6 +799,10 @@ mod tests {
             class Cake {
                 bake() {
                     print "Baking...";
+                }
+
+                class classMethod() {
+                    print "Static...";
                 }
             }
         "#;

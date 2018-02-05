@@ -2,9 +2,10 @@ extern crate rustyline;
 extern crate env_logger;
 #[macro_use]
 extern crate log;
-extern crate failure;
 #[macro_use]
-extern crate failure_derive;
+extern crate failure;
+
+extern crate parser;
 
 use std::env;
 use std::io::prelude::*;
@@ -16,7 +17,6 @@ use repl::Repl;
 use pretty_printer::PrettyPrinter;
 
 mod environment;
-mod parser;
 mod eval;
 mod value;
 mod repl;

@@ -2,8 +2,6 @@ use super::Position;
 use std::rc::Rc;
 use std::cell::RefCell;
 
-use environment::Variable;
-
 #[cfg(test)]
 pub mod dsl {
     use super::*;
@@ -54,6 +52,40 @@ pub mod dsl {
     }
 }
 
+#[derive(PartialEq, Debug, Clone)]
+pub struct Variable {
+    name: String,
+    depth: Option<usize>,
+}
+
+impl Variable {
+    pub fn new_global(name: &str) -> Self {
+        Variable {
+            name: name.to_owned(),
+            depth: None,
+        }
+    }
+
+    pub fn new_local(name: &str) -> Self {
+        Variable {
+            name: name.to_owned(),
+            depth: Some(0),
+        }
+    }
+
+    pub fn resolve(&mut self, depth: usize) {
+        self.depth = Some(depth);
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn depth(&self) -> Option<usize> {
+        self.depth
+    }
+}
+
 #[derive(PartialEq, Debug)]
 pub enum Stmt {
     Expr(Expr),
@@ -65,7 +97,15 @@ pub enum Stmt {
     Break,
     Function(FunctionStmt),
     Return(Expr),
-    Class(Variable, Vec<FunctionStmt>, Option<Variable>),
+    Class(Class),
+}
+
+#[derive(PartialEq, Debug)]
+pub struct Class {
+    pub var: Variable,
+    pub methods: Vec<FunctionStmt>,
+    pub class_methods: Vec<FunctionStmt>,
+    pub superclass: Option<Variable>,
 }
 
 #[derive(PartialEq, Debug, Clone)]
@@ -114,8 +154,14 @@ impl Stmt {
         Stmt::If(cond, Box::new(then_clause), Some(Box::new(else_clause)))
     }
 
-    pub(super) fn class(name: &str, methods: Vec<FunctionStmt>, superclass: Option<Variable>) -> Stmt {
-        Stmt::Class(Variable::new_local(name), methods, superclass)
+    pub(super) fn class(name: &str, methods: Vec<FunctionStmt>, class_methods: Vec<FunctionStmt>, superclass: Option<Variable>) -> Stmt {
+        let var = Variable::new_local(name);
+        Stmt::Class(Class {
+            var,
+            methods,
+            class_methods,
+            superclass,
+        })
     }
 }
 

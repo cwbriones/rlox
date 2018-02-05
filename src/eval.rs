@@ -1,4 +1,4 @@
-use environment::{Variable, Environment};
+use environment::Environment;
 use parser::ast::*;
 use value::Value;
 
@@ -133,23 +133,23 @@ impl Eval for Stmt {
                 interpreter.push_return(retval);
                 return Err(RuntimeError::Return);
             },
-            Stmt::Class(ref var, ref methods, ref sc_var) => {
+            Stmt::Class(ref class_decl) => {
                 // TODO: Clean this up.
-                let class = if let &Some(ref sc_var) = sc_var {
+                let class = if let Some(ref sc_var) = class_decl.superclass {
                     let superclass = match interpreter.lookup(env, sc_var) {
                         Some(v) => v.clone(),
-                        None => return Err(RuntimeError::UndefinedVariable(var.name().into())),
+                        None => return Err(RuntimeError::UndefinedVariable(sc_var.name().into())),
                     };
                     if superclass.clone().into_class().is_none() {
                         return Err(RuntimeError::SuperNotAClass);
                     }
                     let mut env = env.extend();
                     env.set_at("super", superclass.clone(), 0);
-                    Value::new_class(var.name(), methods.clone(), env, Some(superclass))
+                    Value::new_class(class_decl.var.name(), class_decl.methods.clone(), env, Some(superclass))
                 } else {
-                    Value::new_class(var.name(), methods.clone(), env.clone(), None)
+                    Value::new_class(class_decl.var.name(), class_decl.methods.clone(), env.clone(), None)
                 };
-                interpreter.assign(env, var, class);
+                interpreter.assign(env, &class_decl.var, class);
                 return Ok(Value::Void);
             },
         }
