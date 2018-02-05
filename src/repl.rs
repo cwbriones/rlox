@@ -4,7 +4,7 @@ use rustyline::error::ReadlineError;
 use eval::Interpreter;
 use failure::Error;
 use value::Value;
-use parser::Parser;
+use parser;
 
 const PROMPT: &str = "rlox> ";
 const BLOCK_PROMPT: &str = "    > ";
@@ -70,12 +70,11 @@ impl Repl {
     }
 
     fn eval(&mut self, line: &str) -> Result<Value, Error> {
-        let mut parser = Parser::new(line);
         if line.ends_with('}') || line.ends_with(';') {
-            let stmt = parser.parse_statement()?;
+            let stmt = parser::parse_stmt(line)?;
             self.interpreter.interpret(stmt).map_err(Into::into)
         } else {
-            let expr = parser.expression()?;
+            let expr = parser::parse_expr(line)?;
             self.interpreter.interpret(expr).map_err(Into::into)
         }
     }

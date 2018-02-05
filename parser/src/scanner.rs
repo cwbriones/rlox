@@ -6,6 +6,8 @@ use super::errors::*;
 
 use std::str;
 
+type Result<T> = ::std::result::Result<T, SyntaxError>;
+
 #[derive(Debug, Clone, Copy)]
 pub(super) struct Token<'a> {
     pub ty: TokenType<'a>,

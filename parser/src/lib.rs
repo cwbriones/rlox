@@ -23,6 +23,8 @@
 
 #[macro_use]
 extern crate failure;
+#[macro_use]
+extern crate log;
 
 use std::iter::Peekable;
 
@@ -39,10 +41,37 @@ pub mod ast;
 pub mod errors;
 mod ext;
 mod scanner;
+mod resolver;
+
+type Result<T> = ::std::result::Result<T, SyntaxError>;
+
+pub fn parse(input: &str) -> ::std::result::Result<Vec<Stmt>, Vec<SyntaxError>> {
+    let mut parser = Parser::new(&input);
+    parser.parse()
+}
+
+pub fn parse_stmt(input: &str) -> ::std::result::Result<Stmt, SyntaxError> {
+    let mut parser = Parser::new(&input);
+    parser.parse_statement()
+}
+
+pub fn parse_expr(input: &str) -> ::std::result::Result<Expr, SyntaxError> {
+    let mut parser = Parser::new(&input);
+    parser.expression()
+}
+
+pub fn resolve(stmts: &mut [Stmt]) -> ::std::result::Result<(), Vec<ResolveError>> {
+    let mut resolver = resolver::Resolver::new();
+    resolver.resolve(stmts).map_err(|err| {
+        let mut errs = Vec::new();
+        errs.push(err);
+        errs
+    })
+}
 
 const MAX_NUM_PARAMETERS: usize = 8;
 
-pub struct Parser<'t> {
+struct Parser<'t> {
     scanner: Peekable<Scanner<'t>>,
 }
 

@@ -1,26 +1,7 @@
 use std::collections::HashMap;
 
-use parser::ast::*;
-
-#[derive(Debug, Fail, PartialEq)]
-pub enum ResolveError {
-    #[fail(display =  "'return' outside function")]
-    ReturnOutsideFunction,
-    #[fail(display =  "'break' outside loop")]
-    BreakOutsideLoop,
-    #[fail(display = "Cannot read local variable in its own initializer")]
-    InitializerSelfReference,
-    #[fail(display = "Variable with this name already declared in this scope")]
-    AlreadyDeclared,
-    #[fail(display = "Cannot use 'this' outside of a class")]
-    ThisOutsideClass,
-    #[fail(display = "Cannot return a value from an initializer")]
-    ReturnFromInitializer,
-    #[fail(display = "Cannot use 'super' outside of a class")]
-    SuperOutsideClass,
-    #[fail(display = "Cannot use 'super' in a class with no superclass")]
-    SuperInBaseClass,
-}
+use ast::*;
+use errors::ResolveError;
 
 pub struct Resolver {
     scopes: Scopes,
@@ -292,7 +273,7 @@ impl Resolver {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use parser::Parser;
+    use ::parse;
 
     #[test]
     fn break_outside_loop() {
@@ -334,7 +315,7 @@ mod tests {
     }
 
     fn parse_and_resolve(prog: &str) -> Result {
-        let mut stmts = Parser::new(prog).parse().unwrap();
+        let mut stmts = parse(prog).unwrap();
         Resolver::new().resolve(&mut stmts)
     }
 }
