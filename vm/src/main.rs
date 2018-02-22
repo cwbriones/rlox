@@ -1,108 +1,80 @@
-use chunk::{Chunk, Op};
-use value::Value;
 use std::env;
+use std::io::prelude::*;
+use std::fs::File;
+
+use compile::Compiler;
+
+extern crate parser;
+extern crate failure;
 
 #[macro_use]
 mod chunk;
-
 mod value;
 mod debug;
+mod compile;
+mod vm;
 
 fn main() {
-    // print 1 + (2 * 3)
-    let mut chunk = Chunk::new("test chunk".into());
+    let mut args = env::args();
+    let _ = args.next();
 
-    let idx = chunk.add_constant(Value::float(2.0));
-    chunk.write(Op::Constant(idx), 1);
-
-    let idx = chunk.add_constant(Value::float(3.0));
-    chunk.write(Op::Constant(idx), 1);
-
-    chunk.write(Op::Multiply, 1);
-
-    let idx = chunk.add_constant(Value::float(1.0));
-    chunk.write(Op::Constant(idx), 1);
-
-    chunk.write(Op::Add, 1);
-    chunk.write(Op::Print, 1);
-
-    if env::var("DEBUG").is_ok() {
-        let disassembler = debug::Disassembler::new(&chunk);
-        disassembler.disassemble();
-    }
- 
-    VM::new(chunk).run();
-}
-
-struct VM { 
-    stack: Vec<Value>,
-    ip: usize,
-    chunk: Chunk,
-}
-
-impl VM {
-    fn new(chunk: Chunk) -> Self {
-        VM {
-            stack: Vec::new(),
-            ip: 0,
-            chunk,
+    if let Some(arg) = args.next() {
+        let res = match &arg[..] {
+            "help" => {
+                println!("Usage: rlox [script]");
+                ::std::process::exit(0);
+            },
+            sourcefile => execute(sourcefile),
+        };
+        if let Err(err) = res {
+            eprintln!("[error]: {}", err);
+            ::std::process::exit(2);
         }
+    } else {
+        println!("Usage: rlox [script]");
+        ::std::process::exit(1);
     }
 
-    fn run(mut self) {
-        let l = self.chunk.len();
-        while self.ip < l {
-            let inst = self.read_byte();
-            decode_op!(inst, self);
-        }
-    }
-
-    fn ret(&mut self) {
-        panic!("Cannot return from top-level.");
-    }
-
-    fn constant(&mut self, idx: u8) {
-        let val = *self.chunk.get_constant(idx).unwrap();
-        self.push(val);
-    }
-
-    fn print(&mut self) {
-        let val = self.pop();
-        println!("{}", val);
-    }
-
-    fn add(&mut self) {
-        let a = self.pop();
-        let b = self.pop();
-        let c = a.as_float() + b.as_float();
-        self.push(Value::float(c));
-    }
-
-    fn mul(&mut self) {
-        let a = self.pop();
-        let b = self.pop();
-        let c = a.as_float() * b.as_float();
-        self.push(Value::float(c));
-    }
-
-    fn read_byte(&mut self) -> u8 {
-        self.ip += 1;
-        self.chunk.get(self.ip - 1)
-    }
-
-    // fn read_u16(&mut self) -> u16 {
-    //     self.ip += 2;
-    //     (self.chunk.get(self.ip - 1) as u16) << 8 + self.chunk.get(self.ip - 2) as u16
-    // }
+    // let mut chunk = Chunk::new("test chunk".into());
+    // let idx = chunk.add_constant(Value::float(2.0));
+    // chunk.write(Op::Constant(idx), 1);
+    // let idx = chunk.add_constant(Value::float(3.0));
+    // chunk.write(Op::Constant(idx), 1);
+    // chunk.write(Op::Multiply, 1);
+    // let idx = chunk.add_constant(Value::float(1.0));
+    // chunk.write(Op::Constant(idx), 1);
+    // chunk.write(Op::Add, 1);
+    // chunk.write(Op::Print, 1);
     //
-    // fn reset_stack(&mut self) {
+    // if env::var("DEBUG").is_ok() {
+    //     let disassembler = debug::Disassembler::new(&chunk);
+    //     disassembler.disassemble();
     // }
+}
 
-    fn push(&mut self, value: Value) {
-        self.stack.push(value);
-    }
+macro_rules! report_and_bail (
+    ($expr:expr) => (
+        match $expr {
+            Ok(ok) => ok,
+            Err(errors) => show_errors(errors),
+        }
+    );
+);
 
-    fn pop(&mut self) -> Value {
-        self.stack.pop().unwrap()
+fn execute(filename: &str) -> Result<(), failure::Error> {
+    let mut file = File::open(filename)?;
+    let mut contents = String::new();
+    file.read_to_string(&mut contents)?;
+    let mut stmts = report_and_bail!(parser::parse(&contents));
+    report_and_bail!(parser::resolve(&mut stmts));
+    let chunk = Compiler::new().compile(filename, &stmts);
+    vm::VM::new(chunk).run();
+    Ok(())
+}
+
+fn show_errors<E: failure::Fail>(errors: Vec<E>) -> ! {
+    for err in errors {
+        eprintln!("[error]: Parse: {}", err);
     }
+    ::std::process::exit(1);
 }

@@ -98,15 +98,15 @@ pub enum Op {
     // GetProperty,
     // SetProperty,
     // GetSuper,
-    // Equal,
-    // GreaterThan,
-    // LessThan,
+    Equal,
+    GreaterThan,
+    LessThan,
     Add,
     Subtract,
     Multiply,
     Divide,
-    // Not,
-    // Negate,
+    Not,
+    Negate,
     Print,
     // Jump,
     // JumpIfFalse,
@@ -156,6 +156,11 @@ impl Op {
             Op::Subtract => { buf.push(0x04); }
             Op::Multiply => { buf.push(0x05); }
             Op::Divide => { buf.push(0x06); }
+            Op::Not => { buf.push(0x07); }
+            Op::Negate => { buf.push(0x08); }
+            Op::Equal => { buf.push(0x09); }
+            Op::GreaterThan => { buf.push(0x0a); }
+            Op::LessThan => { buf.push(0x0b); }
         }
     }
 }
@@ -166,12 +171,15 @@ macro_rules! decode_op {
             0x00 => { $this.ret(); }
             0x01 => { let idx = $this.read_byte(); $this.constant(idx); }
             0x02 => { $this.print(); }
-            0x03 => {
-                $this.add();
-            },
-            0x05 => {
-                $this.mul();
-            }
+            0x03 => { $this.add(); }
+            0x04 => { $this.sub(); }
+            0x05 => { $this.mul(); }
+            0x06 => { $this.div() }
+            0x07 => { $this.not() }
+            0x08 => { $this.neg() }
+            0x09 => { $this.eq() }
+            0x0a => { $this.gt() }
+            0x0b => { $this.lt() }
             _ => { 
                 panic!("Unknown op {}", $op);
             }
