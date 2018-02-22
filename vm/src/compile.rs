@@ -13,7 +13,7 @@ impl Compiler {
     pub fn new() -> Self {
         Compiler {
             chunk: Chunk::new("<unnamed chunk>".into()),
-            line: 0,
+            line: 1,
         }
     }
 
@@ -36,10 +36,28 @@ impl Compiler {
             },
             Stmt::Expr(_) => {
             },
-            // Stmt::Block(_) => {
-            // },
-            // Stmt::If(_, _, _) => {
-            // },
+            Stmt::Block(ref stmts) => {
+                // TODO: Proper scope.
+                for s in stmts {
+                    self.compile_stmt(s);
+                }
+            },
+            Stmt::If(ref cond, ref then_clause, ref else_clause) => {
+                self.compile_expr(cond);
+
+                // Jump to the else clause if false
+                let else_loc = self.emit_jze();
+                self.compile_stmt(&*then_clause);
+                if let &Some(ref else_clause) = else_clause {
+                    // Jump to just past the else clause from the then clause
+                    let after_loc = self.emit_jmp();
+                    self.patch_jmp(else_loc);
+                    self.compile_stmt(&*else_clause);
+                    self.patch_jmp(after_loc);
+                } else {
+                    self.patch_jmp(else_loc);
+                }
+            },
             // Stmt::While(_, _) => {
             // },
             // Stmt::Function(_) => {
@@ -116,6 +134,28 @@ impl Compiler {
                 unimplemented!("Compiler::emit_constant string");
             }
         }
+    }
+
+    fn emit_jze(&mut self) -> usize {
+        self.chunk.write(Op::JumpIfFalse, self.line);
+        self.chunk.write_byte(0xff);
+        self.chunk.write_byte(0xff);
+        self.chunk.len() - 2
+    }
+
+    fn emit_jmp(&mut self) -> usize {
+        self.chunk.write(Op::Jump, self.line);
+        self.chunk.write_byte(0xff);
+        self.chunk.write_byte(0xff);
+        self.chunk.len() - 2
+    }
+
+    fn patch_jmp(&mut self, idx: usize) {
+        let jmp = self.chunk.len();
+        let lo = (jmp & 0xff) as u8;
+        let hi = ((jmp >> 8) & 0xff) as u8;
+        self.chunk.write_byte_at(idx, lo);
+        self.chunk.write_byte_at(idx + 1, hi);
     }
 
     fn emit(&mut self, op: Op) {

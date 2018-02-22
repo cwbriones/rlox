@@ -134,6 +134,10 @@ impl Value {
     pub fn truthy(&self) -> bool {
         self.raw != FALSE && self.raw != NIL
     }
+
+    pub fn falsey(&self) -> bool {
+        self.raw == FALSE || self.raw == NIL
+    }
 }
 
 impl Debug for Value {
