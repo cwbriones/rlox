@@ -28,6 +28,14 @@ impl Chunk {
         op.write(&mut self.code);
     }
 
+    pub fn write_byte(&mut self, byte: u8) {
+        self.code.push(byte);
+    }
+
+    pub fn write_byte_at(&mut self, idx: usize, byte: u8) {
+        self.code[idx] = byte;
+    }
+
     fn add_line(&mut self, line: usize) {
         match self.lines.last().cloned() {
             Some(last) if last.line == line => return,
@@ -108,8 +116,8 @@ pub enum Op {
     Not,
     Negate,
     Print,
-    // Jump,
-    // JumpIfFalse,
+    Jump,
+    JumpIfFalse,
     // Loop,
     // Call_0,
     // Call_1,
@@ -149,7 +157,7 @@ pub enum Op {
 impl Op {
     fn write(&self, buf: &mut Vec<u8>) {
         match *self {
-            Op::Return => { buf.push(0x00) }
+            Op::Return => { buf.push(0x00); }
             Op::Constant(idx) => { buf.push(0x01); buf.push(idx); }
             Op::Print => { buf.push(0x02); }
             Op::Add => { buf.push(0x03); }
@@ -161,6 +169,8 @@ impl Op {
             Op::Equal => { buf.push(0x09); }
             Op::GreaterThan => { buf.push(0x0a); }
             Op::LessThan => { buf.push(0x0b); }
+            Op::Jump => { buf.push(0x0c); }
+            Op::JumpIfFalse => { buf.push(0x0d); }
         }
     }
 }
@@ -180,6 +190,8 @@ macro_rules! decode_op {
             0x09 => { $this.eq() }
             0x0a => { $this.gt() }
             0x0b => { $this.lt() }
+            0x0c => { $this.jmp() },
+            0x0d => { $this.jze() },
             _ => { 
                 panic!("Unknown op {}", $op);
             }

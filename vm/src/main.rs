@@ -24,7 +24,7 @@ fn main() {
                 println!("Usage: rlox [script]");
                 ::std::process::exit(0);
             },
-            sourcefile => execute(sourcefile),
+            sourcefile => execute(sourcefile, env::var("DEBUG").is_ok()),
         };
         if let Err(err) = res {
             eprintln!("[error]: {}", err);
@@ -45,11 +45,6 @@ fn main() {
     // chunk.write(Op::Constant(idx), 1);
     // chunk.write(Op::Add, 1);
     // chunk.write(Op::Print, 1);
-    //
-    // if env::var("DEBUG").is_ok() {
-    //     let disassembler = debug::Disassembler::new(&chunk);
-    //     disassembler.disassemble();
-    // }
 }
 
 macro_rules! report_and_bail (
@@ -61,14 +56,21 @@ macro_rules! report_and_bail (
     );
 );
 
-fn execute(filename: &str) -> Result<(), failure::Error> {
+fn execute(filename: &str, debug: bool) -> Result<(), failure::Error> {
     let mut file = File::open(filename)?;
     let mut contents = String::new();
     file.read_to_string(&mut contents)?;
     let mut stmts = report_and_bail!(parser::parse(&contents));
     report_and_bail!(parser::resolve(&mut stmts));
     let chunk = Compiler::new().compile(filename, &stmts);
+
+    if debug {
+        let disassembler = debug::Disassembler::new(&chunk);
+        disassembler.disassemble();
+    }
+
     vm::VM::new(chunk).run();
+
     Ok(())
 }
 

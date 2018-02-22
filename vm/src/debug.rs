@@ -53,8 +53,25 @@ impl<'c> Disassembler<'c> {
     fn gt(&self) { println!("OP_GT"); }
     fn lt(&self) { println!("OP_LT"); }
 
+    fn jmp(&mut self) {
+        let ip = self.read_u16();
+        println!("OP_JMP {}", ip);
+    }
+
+    fn jze(&mut self) {
+        let ip = self.read_u16();
+        println!("OP_JZE {}", ip);
+    }
+
     fn read_byte(&mut self) -> u8 {
         self.offset += 1;
         self.chunk.as_ref()[self.offset - 1]
+    }
+
+    fn read_u16(&mut self) -> u16 {
+        self.offset += 2;
+        let lo = self.chunk.get(self.offset - 2) as u16;
+        let hi = self.chunk.get(self.offset - 1) as u16;
+        lo + (hi << 8)
     }
 }
