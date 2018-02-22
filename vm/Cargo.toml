@@ -1,0 +1,8 @@
+[package]
+name = "vm"
+version = "0.1.0"
+authors = ["Christian Briones <cwbriones@gmail.com>"]
+
+[dependencies]
+failure = "0.1.1"
+log = "*"
