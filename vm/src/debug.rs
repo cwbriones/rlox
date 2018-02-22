@@ -46,6 +46,12 @@ impl<'c> Disassembler<'c> {
     fn add(&self) { println!("OP_ADD"); }
     fn sub(&self) { println!("OP_SUB"); }
     fn mul(&self) { println!("OP_MUL"); }
+    fn div(&self) { println!("OP_DIV"); }
+    fn neg(&self) { println!("OP_DIV"); }
+    fn not(&self) { println!("OP_DIV"); }
+    fn eq(&self) { println!("OP_EQ"); }
+    fn gt(&self) { println!("OP_GT"); }
+    fn lt(&self) { println!("OP_LT"); }
 
     fn read_byte(&mut self) -> u8 {
         self.offset += 1;

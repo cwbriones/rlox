@@ -57,7 +57,7 @@
 use std::mem::transmute;
 use std::fmt::{Debug, Display};
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq)]
 pub struct Value {
     raw: u64,
 }
