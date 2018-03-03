@@ -115,9 +115,8 @@ impl VM {
     }
 
     fn jze(&mut self) {
-        let pred = self.pop();
         let ip = self.read_u16();
-        if pred.falsey() {
+        if self.peek().falsey() {
             self.ip = ip as usize;
         }
     }
@@ -143,5 +142,11 @@ impl VM {
 
     fn pop(&mut self) -> Value {
         self.stack.pop().unwrap()
+    }
+
+    fn peek(&mut self) -> Value {
+        self.stack.last()
+            .expect("stack to be nonempty")
+            .clone()
     }
 }

@@ -95,7 +95,7 @@ pub enum Op {
     // Nil,
     // True,
     // False,
-    // Pop,
+    Pop,
     // GetLocal,
     // SetLocal,
     // GetGlobal,
@@ -157,20 +157,21 @@ pub enum Op {
 impl Op {
     fn write(&self, buf: &mut Vec<u8>) {
         match *self {
-            Op::Return => { buf.push(0x00); }
+            Op::Return => buf.push(0x00),
             Op::Constant(idx) => { buf.push(0x01); buf.push(idx); }
-            Op::Print => { buf.push(0x02); }
-            Op::Add => { buf.push(0x03); }
-            Op::Subtract => { buf.push(0x04); }
-            Op::Multiply => { buf.push(0x05); }
-            Op::Divide => { buf.push(0x06); }
-            Op::Not => { buf.push(0x07); }
-            Op::Negate => { buf.push(0x08); }
-            Op::Equal => { buf.push(0x09); }
-            Op::GreaterThan => { buf.push(0x0a); }
-            Op::LessThan => { buf.push(0x0b); }
-            Op::Jump => { buf.push(0x0c); }
-            Op::JumpIfFalse => { buf.push(0x0d); }
+            Op::Print => buf.push(0x02),
+            Op::Add => buf.push(0x03),
+            Op::Subtract => buf.push(0x04),
+            Op::Multiply => buf.push(0x05),
+            Op::Divide => buf.push(0x06),
+            Op::Not => buf.push(0x07),
+            Op::Negate => buf.push(0x08),
+            Op::Equal => buf.push(0x09),
+            Op::GreaterThan => buf.push(0x0a),
+            Op::LessThan => buf.push(0x0b),
+            Op::Jump => buf.push(0x0c),
+            Op::JumpIfFalse => buf.push(0x0d),
+            Op::Pop => buf.push(0x0e),
         }
     }
 }
@@ -178,21 +179,22 @@ impl Op {
 macro_rules! decode_op {
     ($op:expr, $this:ident) => {
         match $op {
-            0x00 => { $this.ret(); }
+            0x00 => $this.ret(),
             0x01 => { let idx = $this.read_byte(); $this.constant(idx); }
-            0x02 => { $this.print(); }
-            0x03 => { $this.add(); }
-            0x04 => { $this.sub(); }
-            0x05 => { $this.mul(); }
-            0x06 => { $this.div() }
-            0x07 => { $this.not() }
-            0x08 => { $this.neg() }
-            0x09 => { $this.eq() }
-            0x0a => { $this.gt() }
-            0x0b => { $this.lt() }
-            0x0c => { $this.jmp() },
-            0x0d => { $this.jze() },
-            _ => { 
+            0x02 => $this.print(),
+            0x03 => $this.add(),
+            0x04 => $this.sub(),
+            0x05 => $this.mul(),
+            0x06 => $this.div(),
+            0x07 => $this.not(),
+            0x08 => $this.neg(),
+            0x09 => $this.eq(),
+            0x0a => $this.gt(),
+            0x0b => $this.lt(),
+            0x0c => $this.jmp(),
+            0x0d => $this.jze(),
+            0x0e => { $this.pop(); },
+            _ => {
                 panic!("Unknown op {}", $op);
             }
         }

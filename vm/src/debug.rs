@@ -52,6 +52,7 @@ impl<'c> Disassembler<'c> {
     fn eq(&self) { println!("OP_EQ"); }
     fn gt(&self) { println!("OP_GT"); }
     fn lt(&self) { println!("OP_LT"); }
+    fn pop(&self) { println!("OP_POP"); }
 
     fn jmp(&mut self) {
         let ip = self.read_u16();
