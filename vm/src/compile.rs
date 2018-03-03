@@ -34,7 +34,9 @@ impl Compiler {
                 self.compile_expr(expr);
                 self.emit(Op::Print);
             },
-            Stmt::Expr(_) => {
+            Stmt::Expr(ref expr) => {
+                self.compile_expr(expr);
+                self.emit(Op::Pop); // expression is unused
             },
             Stmt::Block(ref stmts) => {
                 // TODO: Proper scope.
@@ -44,22 +46,28 @@ impl Compiler {
             },
             Stmt::If(ref cond, ref then_clause, ref else_clause) => {
                 self.compile_expr(cond);
-
                 // Jump to the else clause if false
-                let else_loc = self.emit_jze();
+                let else_jmp = self.emit_jze();
+                self.emit(Op::Pop); // condition
                 self.compile_stmt(&*then_clause);
+                let end_jmp = self.emit_jmp();
+                // Jump to just past the else clause from the then clause
+                self.patch_jmp(else_jmp);
+                self.emit(Op::Pop); // condition
                 if let &Some(ref else_clause) = else_clause {
-                    // Jump to just past the else clause from the then clause
-                    let after_loc = self.emit_jmp();
-                    self.patch_jmp(else_loc);
                     self.compile_stmt(&*else_clause);
-                    self.patch_jmp(after_loc);
-                } else {
-                    self.patch_jmp(else_loc);
                 }
+                self.patch_jmp(end_jmp);
             },
-            // Stmt::While(_, _) => {
-            // },
+            Stmt::While(ref cond, ref body) => {
+                let ip = self.ip(); // remember loop start
+                self.compile_expr(cond);
+                let end_jmp = self.emit_jze();
+                self.emit(Op::Pop); // condition
+                self.compile_stmt(body);
+                self.emit_jmp_to(ip);
+                self.patch_jmp(end_jmp);
+            },
             // Stmt::Function(_) => {
             // },
             Stmt::Return(ref expr) => {
@@ -115,9 +123,33 @@ impl Compiler {
                     UnaryOperator::Minus => self.emit(Op::Negate),
                     UnaryOperator::Bang  => self.emit(Op::Not),
                 }
-            }
+            },
+            Expr::Logical(ref logical) => {
+                match logical.operator {
+                    LogicalOperator::And => self.and(&*logical.lhs, &*logical.rhs),
+                    LogicalOperator::Or => self.or(&*logical.lhs, &*logical.rhs),
+                }
+            },
             _ => unimplemented!(),
         }
+    }
+
+    fn and(&mut self, lhs: &Expr, rhs: &Expr) {
+        self.compile_expr(lhs);
+        let short_circuit_jmp = self.emit_jze();
+        self.emit(Op::Pop); // left operand
+        self.compile_expr(rhs);
+        self.patch_jmp(short_circuit_jmp);
+    }
+
+    fn or(&mut self, lhs: &Expr, rhs: &Expr) {
+        self.compile_expr(lhs);
+        let else_jmp = self.emit_jze(); // if false, jump to rhs
+        let end_jmp = self.emit_jmp(); // if true, jump to end
+        self.patch_jmp(else_jmp);
+        self.emit(Op::Pop);
+        self.compile_expr(rhs); // left operand
+        self.patch_jmp(end_jmp);
     }
 
     fn emit_constant(&mut self, lit: &Literal) {
@@ -150,8 +182,21 @@ impl Compiler {
         self.chunk.len() - 2
     }
 
+    fn emit_jmp_to(&mut self, ip: usize) -> usize {
+        let lo = (ip & 0xff) as u8;
+        let hi = ((ip >> 8) & 0xff) as u8;
+        self.chunk.write(Op::Jump, self.line);
+        self.chunk.write_byte(lo);
+        self.chunk.write_byte(hi);
+        self.chunk.len() - 2
+    }
+
+    fn ip(&self) -> usize {
+        self.chunk.len()
+    }
+
     fn patch_jmp(&mut self, idx: usize) {
-        let jmp = self.chunk.len();
+        let jmp = self.ip();
         let lo = (jmp & 0xff) as u8;
         let hi = ((jmp >> 8) & 0xff) as u8;
         self.chunk.write_byte_at(idx, lo);
