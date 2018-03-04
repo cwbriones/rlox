@@ -1,10 +1,12 @@
-use value::Value;
 use chunk::Chunk;
+use gc::Gc;
+use gc::value::Value;
 
 pub struct VM {
     stack: Vec<Value>,
     ip: usize,
     chunk: Chunk,
+    gc: Gc,
 }
 
 impl VM {
@@ -13,6 +15,7 @@ impl VM {
             stack: Vec::new(),
             ip: 0,
             chunk,
+            gc: Gc::new(),
         }
     }
 

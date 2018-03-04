@@ -1,4 +1,4 @@
-use value::Value;
+use gc::value::Value;
 
 pub struct Chunk {
     code: Vec<u8>,

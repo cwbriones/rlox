@@ -8,13 +8,14 @@ use compile::Compiler;
 
 extern crate parser;
 extern crate failure;
+extern crate bit_vec;
 
 #[macro_use]
 mod chunk;
-mod value;
 mod debug;
 mod compile;
 mod vm;
+mod gc;
 
 fn main() {
     let mut args = env::args();
