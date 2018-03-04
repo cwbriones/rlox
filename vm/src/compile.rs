@@ -1,7 +1,6 @@
 use chunk::{Chunk, Op};
-use value::Value;
+use gc::value::Value;
 
-use parser;
 use parser::ast::*;
 
 pub struct Compiler {
