@@ -58,25 +58,27 @@ fn debug(mut args: env::Args) -> Result<(), failure::Error> {
         Some(filename) => filename,
         None => return Err(err_msg("missing file")),
     };
-    let chunk = compile(&filename)?;
+    let mut gc = gc::Gc::new();
+    let chunk = compile(&filename, &mut gc)?;
     let disassembler = debug::Disassembler::new(&chunk);
     disassembler.disassemble();
     Ok(())
 }
 
 fn execute(filename: &str) -> Result<(), failure::Error> {
-    let chunk = compile(&filename)?;
-    vm::VM::new(chunk).run();
+    let mut gc = gc::Gc::new();
+    let chunk = compile(&filename, &mut gc)?;
+    vm::VM::new(chunk, gc).run();
     Ok(())
 }
 
-fn compile(filename: &str) -> Result<chunk::Chunk, failure::Error> {
+fn compile(filename: &str, gc: &mut gc::Gc) -> Result<chunk::Chunk, failure::Error> {
     let mut file = File::open(filename)?;
     let mut contents = String::new();
     file.read_to_string(&mut contents)?;
     let mut stmts = report_and_bail!(parser::parse(&contents));
     report_and_bail!(parser::resolve(&mut stmts));
-    Ok(Compiler::new().compile(filename, &stmts))
+    Ok(Compiler::new(gc).compile(filename, &stmts))
 }
 
 fn show_errors<E: failure::Fail>(errors: Vec<E>) -> ! {
