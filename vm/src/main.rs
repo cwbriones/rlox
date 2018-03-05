@@ -8,7 +8,6 @@ use compile::Compiler;
 
 extern crate parser;
 extern crate failure;
-extern crate bit_vec;
 
 #[macro_use]
 mod chunk;
