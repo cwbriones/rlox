@@ -1,18 +1,22 @@
 use chunk::{Chunk, Op};
+
+use gc::Gc;
 use gc::value::Value;
 
 use parser::ast::*;
 
-pub struct Compiler {
+pub struct Compiler<'g> {
     chunk: Chunk,
     line: usize,
+    gc: &'g mut Gc,
 }
 
-impl Compiler {
-    pub fn new() -> Self {
+impl<'g> Compiler<'g> {
+    pub fn new(gc: &'g mut Gc) -> Self {
         Compiler {
             chunk: Chunk::new("<unnamed chunk>".into()),
             line: 1,
+            gc,
         }
     }
 
@@ -161,8 +165,11 @@ impl Compiler {
                 let idx = self.chunk.add_constant(value);
                 self.emit(Op::Constant(idx));
             }
-            Literal::String(_) => {
-                unimplemented!("Compiler::emit_constant string");
+            Literal::String(ref s) => {
+                let handle = self.gc.allocate_string(s.clone());
+                self.gc.root(handle);
+                let idx = self.chunk.add_constant(handle.into_value());
+                self.emit(Op::Constant(idx));
             }
         }
     }

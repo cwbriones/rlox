@@ -1,7 +1,6 @@
-use std::ops::Deref;
-
 use self::arena::ArenaSet;
-use self::arena::ArenaPtr;
+use self::object::Object;
+use self::object::ObjectHandle;
 
 pub mod value;
 pub mod object;
@@ -41,23 +40,30 @@ const INITIAL_NEXT_GC: usize = 8192;
 const GC_GROW_FACTOR: usize = 2;
 
 pub struct Gc {
-    strings: ArenaSet<String>,
+    objects: ArenaSet<Object>,
     allocations: usize,
     next_gc: usize,
+    roots: Vec<ObjectHandle>,
 }
 
 impl Gc {
     pub fn new() -> Self {
         Gc {
-            strings: ArenaSet::new(ARENASET_CAPACITY),
+            objects: ArenaSet::new(ARENASET_CAPACITY),
             allocations: 0,
             next_gc: INITIAL_NEXT_GC,
+            roots: Vec::new(),
         }
     }
 
-    pub fn allocate_string(&mut self, t: &str) -> ArenaPtr<String> {
+    pub fn allocate_string(&mut self, s: String) -> ObjectHandle {
         self.on_allocation();
-        self.strings.allocate(t.into())
+        let obj = Object::string(s);
+        ObjectHandle::new(self.objects.allocate(obj))
+    }
+
+    pub fn root(&mut self, obj: ObjectHandle) {
+        self.roots.push(obj);
     }
 
     fn on_allocation(&mut self) {
@@ -69,13 +75,18 @@ impl Gc {
 
     fn gc_collect(&mut self) {
         // Mark
+        for root in &mut self.roots {
+            if root.is_marked() {
+                root.mark();
+            }
+        }
 
         // Sweep
-        self.strings.sweep();
+        self.objects.sweep();
 
         // Reset
         self.allocations = 0;
-        self.next_gc = self.strings.total_capacity() / 2
+        self.next_gc *= GC_GROW_FACTOR;
     }
 }
 

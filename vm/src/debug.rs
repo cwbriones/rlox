@@ -36,7 +36,7 @@ impl<'c> Disassembler<'c> {
         decode_op!(inst, self);
     }
 
-    fn constant(&mut self, idx: u8) { 
+    fn constant(&mut self, idx: u8) {
         let val = self.chunk.get_constant(idx).expect("invalid constant segment index");
         println!("OP_CONSTANT {:?}", val);
     }

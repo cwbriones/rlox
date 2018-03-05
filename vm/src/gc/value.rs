@@ -1,3 +1,6 @@
+use super::object::ObjectHandle;
+use super::arena::ArenaPtr;
+
 use std::mem::transmute;
 use std::fmt::{Debug, Display};
 
@@ -7,12 +10,12 @@ pub struct Value {
 }
 
 #[derive(Debug)]
-enum Variant {
+pub enum Variant {
     Float(f64),
     True,
     False,
     Nil,
-    Ptr(ObjectRef),
+    Obj(ObjectHandle)
 }
 
 const TAG_TRUE: u64 = 0x01;
@@ -24,30 +27,6 @@ const SIGN: u64 = 1 << 63;
 const TRUE: u64 = QNAN | TAG_TRUE;
 const FALSE: u64 = QNAN | TAG_FALSE;
 const NIL: u64 = QNAN | TAG_NIL;
-const MAN: u64 = (1 << 52) - 1;
-
-#[derive(Debug)]
-pub struct ObjectRef {
-    ptr: usize,
-}
-
-fn decode(u: u64) -> Variant {
-    if u & QNAN != QNAN {
-        return Variant::Float(unsafe{ transmute(u) });
-    }
-    // sign bit indicates pointer
-    if (u & SIGN) == 1 {
-        let man = u & MAN; // only keep lower 51 bits
-        let ptr = man as usize;
-        return Variant::Ptr(ObjectRef { ptr })
-    }
-    match u & 7 {
-        TAG_TRUE => Variant::True,
-        TAG_FALSE => Variant::False,
-        TAG_NIL => Variant::Nil,
-        tag => panic!("unknown singleton {}", tag),
-    }
-}
 
 impl Value {
     pub fn float(f: f64) -> Self {
@@ -74,8 +53,12 @@ impl Value {
         }
     }
 
+    pub fn object(handle: ObjectHandle) -> Self {
+        Value { raw: handle.into_raw() | QNAN | SIGN }
+    }
+
     pub fn as_float(&self) -> f64 {
-        if let Variant::Float(f) = decode(self.raw) {
+        if let Variant::Float(f) = self.decode() {
             return f;
         }
         panic!("value not a float");
@@ -88,22 +71,44 @@ impl Value {
     pub fn falsey(&self) -> bool {
         self.raw == FALSE || self.raw == NIL
     }
+
+    pub fn decode(&self) -> Variant {
+        let u = self.raw;
+        if u & QNAN != QNAN {
+            return Variant::Float(unsafe{ transmute(u) });
+        }
+        // sign bit indicates pointer
+        if (u & (QNAN | SIGN)) == (QNAN | SIGN) {
+            let ptr = u & (!(QNAN | SIGN)); // only keep lower 51 bits
+            unsafe {
+                let arena_ptr = ArenaPtr::from_raw(ptr);
+                let handle = ObjectHandle::new(arena_ptr);
+                return Variant::Obj(handle);
+            }
+        }
+        match u & 7 {
+            TAG_TRUE => Variant::True,
+            TAG_FALSE => Variant::False,
+            TAG_NIL => Variant::Nil,
+            tag => panic!("unknown singleton {}", tag),
+        }
+    }
 }
 
 impl Debug for Value {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-        write!(f, "{:?}", decode(self.raw))
+        write!(f, "{:?}", self.decode())
     }
 }
 
 impl Display for Value {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-        match decode(self.raw) {
+        match self.decode() {
             Variant::Nil => write!(f, "nil"),
             Variant::False => write!(f, "false"),
             Variant::True => write!(f, "true"),
             Variant::Float(n) => write!(f, "{}", n),
-            Variant::Ptr(_) => write!(f, "<Object>"),
+            Variant::Obj(o) => write!(f, "{}", o),
         }
     }
 }

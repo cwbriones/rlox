@@ -3,6 +3,7 @@ use std::ops::Deref;
 struct Arena<T> {
     storage: Vec<Entry<T>>,
     next: usize,
+    size: usize,
 }
 
 enum Entry<T> {
@@ -22,14 +23,6 @@ impl<T> Entry<T> {
             return Some(index);
         }
         None
-    }
-
-    fn is_vacant(&self) -> bool {
-        if let Entry::Vacant(_) = *self {
-            true
-        } else {
-            false
-        }
     }
 
     fn should_collect(&self) -> bool {
@@ -52,6 +45,7 @@ impl<T> Arena<T> {
         Arena {
             storage,
             next: 0,
+            size: 0,
         }
     }
 
@@ -64,9 +58,10 @@ impl<T> Arena<T> {
         self.next = self.storage[self.next]
             .insert(item)
             .unwrap();
+        self.size += 1;
 
         if let Entry::Occupied(ref mut o) = self.storage[index] {
-            return ArenaPtr::new(o as *mut _)
+            return unsafe { ArenaPtr::new(o as *mut _) }
         }
         unreachable!()
     }
@@ -76,24 +71,19 @@ impl<T> Arena<T> {
             if entry.should_collect() {
                 *entry = Entry::Vacant(self.next);
                 self.next = i;
+                self.size -= 1;
             }
         }
     }
 
-    fn capacity(&self) -> usize {
-        self.storage.capacity()
-    }
-
     fn is_full(&self) -> bool {
-        self.storage.capacity() == self.storage.len()
+        self.storage.capacity() == self.size
     }
 
     fn is_empty(&self) -> bool {
         self.storage.is_empty()
     }
 }
-
-const CAPACITY: usize = 8192;
 
 pub struct ArenaSet<T> {
     arenas: Vec<Box<Arena<T>>>,
@@ -143,20 +133,37 @@ pub struct ArenaPtr<T> {
 
 impl<T> Clone for ArenaPtr<T> {
     fn clone(&self) -> Self {
-        ArenaPtr::new(self.entry)
+        unsafe {
+            ArenaPtr::new(self.entry)
+        }
     }
 }
 
 impl<T> ::std::marker::Copy for ArenaPtr<T> {}
 
 impl<T> ArenaPtr<T> {
-    fn new(entry: *mut OccupiedEntry<T>) -> Self {
+    unsafe fn new(entry: *mut OccupiedEntry<T>) -> Self {
         ArenaPtr { entry }
     }
 
-    fn mark(&mut self) {
+    pub fn into_raw(self) -> u64 {
+        self.entry as u64
+    }
+
+    pub unsafe fn from_raw(raw: u64) -> Self {
+        let entry: *mut OccupiedEntry<T> = raw as *mut _;
+        ArenaPtr::new(entry)
+    }
+
+    pub fn mark(&mut self) {
         unsafe {
             (*self.entry).mark = true;
+        }
+    }
+
+    pub fn is_marked(&self) -> bool {
+        unsafe {
+            (*self.entry).mark
         }
     }
 }

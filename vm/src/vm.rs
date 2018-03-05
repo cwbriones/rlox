@@ -9,13 +9,15 @@ pub struct VM {
     gc: Gc,
 }
 
+// FIXME: Memory is leaked right now on shutdown. None of the gc roots will be collected.
+
 impl VM {
-    pub fn new(chunk: Chunk) -> Self {
+    pub fn new(chunk: Chunk, gc: Gc) -> Self {
         VM {
             stack: Vec::new(),
             ip: 0,
             chunk,
-            gc: Gc::new(),
+            gc,
         }
     }
 
