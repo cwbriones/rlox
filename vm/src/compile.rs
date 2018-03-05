@@ -22,6 +22,7 @@ impl<'g> Compiler<'g> {
 
     pub fn compile(mut self, name: &str, stmts: &[Stmt]) -> Chunk {
         // Singleton values are always the first 3 constants in a chunk.
+        self.chunk.set_name(name);
         self.chunk.add_constant(Value::nil());
         self.chunk.add_constant(Value::truelit());
         self.chunk.add_constant(Value::falselit());
@@ -81,8 +82,21 @@ impl<'g> Compiler<'g> {
             // },
             // Stmt::Break => {
             // },
-            // Stmt::Var(_, _) => {
-            // }
+            Stmt::Var(ref var, ref init) => {
+                self.compile_expr(init);
+                match var.scope() {
+                    Scope::Global => {
+                        self.emit(Op::SetGlobal);
+                        let handle = self.gc.allocate_string(var.name().into());
+                        unsafe { self.gc.root(handle) };
+                        let idx = self.chunk.add_constant(handle.into_value());
+                        self.emit_byte(idx);
+                    },
+                    Scope::Local(d) => {
+                        unimplemented!("local variables {}", d);
+                    },
+                }
+            }
             _ => unimplemented!(),
         }
     }
@@ -133,6 +147,20 @@ impl<'g> Compiler<'g> {
                     LogicalOperator::Or => self.or(&*logical.lhs, &*logical.rhs),
                 }
             },
+            Expr::Var(ref var) => {
+                match var.scope() {
+                    Scope::Global => {
+                        self.emit(Op::GetGlobal);
+                        let handle = self.gc.allocate_string(var.name().into());
+                        unsafe { self.gc.root(handle) };
+                        let idx = self.chunk.add_constant(handle.into_value());
+                        self.emit_byte(idx);
+                    },
+                    Scope::Local(d) => {
+                        unimplemented!("local variables {}", d);
+                    },
+                }
+            }
             _ => unimplemented!(),
         }
     }
@@ -172,6 +200,12 @@ impl<'g> Compiler<'g> {
                 self.emit(Op::Constant(idx));
             }
         }
+    }
+
+    // FIXME: The high-level global ops should have this in their repr, or
+    // we should make emit_constant handle the case without OP_CONSTANT
+    fn emit_byte(&mut self, byte: u8) {
+        self.chunk.write_byte(byte);
     }
 
     fn emit_jze(&mut self) -> usize {

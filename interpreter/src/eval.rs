@@ -76,17 +76,17 @@ impl Interpreter {
     }
 
     pub fn lookup(&self, env: &Environment, var: &Variable) -> Option<Value> {
-        if let Some(depth) = var.depth() {
-            return env.get_at(var.name(), depth);
+        match var.scope() {
+            Scope::Global => self.globals.get_at(var.name(), 0),
+            Scope::Local(depth) => env.get_at(var.name(), depth),
         }
-        self.globals.get_at(var.name(), 0)
     }
 
     pub fn assign(&mut self, env: &mut Environment, var: &Variable, val: Value) -> bool {
-        if let Some(depth) = var.depth() {
-            return env.set_at(var.name(), val, depth);
+        match var.scope() {
+            Scope::Global => self.globals.set(var, val),
+            Scope::Local(depth) => env.set_at(var.name(), val, depth),
         }
-        self.globals.set_at(var.name(), val, 0)
     }
 }
 
@@ -216,8 +216,15 @@ impl Eval for Expr {
                 //
                 // Any use of 'super' has already been validated
                 let superclass = interpreter.lookup(env, supervar).expect("'super' should always be defined");
-                // This should always be one scope above 'super'
-                let this = env.get_at("this", supervar.depth().expect("super is resolved") - 1).expect("'this' should be defined");
+                // 'this' should always be one scope above 'super'
+                let depth = if let Scope::Local(d) = supervar.scope() {
+                    d - 1
+                } else {
+                    panic!("super should have been resolved to a local scope");
+                };
+                let this = env
+                    .get_at("this", depth)
+                    .expect("'this' should be defined");
 
                 // Now we have to resolve the method bound with this
                 let superclass = superclass.into_class().expect("'super' should always resolve to a class");
