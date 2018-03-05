@@ -79,6 +79,28 @@ impl Chunk {
     pub fn len(&self) -> usize {
         self.code.len()
     }
+
+    pub fn constants(&self) -> Constants {
+        Constants::new(self.constants.iter())
+    }
+}
+
+pub struct Constants<'c> {
+    iter: ::std::slice::Iter<'c, Value>
+}
+
+impl<'c> Constants<'c> {
+    fn new(iter: ::std::slice::Iter<'c, Value>) -> Self {
+        Constants { iter }
+    }
+}
+
+impl<'c> Iterator for Constants<'c> {
+    type Item = Value;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.next().map(|v| *v)
+    }
 }
 
 impl AsRef<[u8]> for Chunk {

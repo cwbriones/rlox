@@ -1,4 +1,5 @@
 use std::ops::Deref;
+use std::fmt::Debug;
 
 struct Arena<T> {
     storage: Vec<Entry<T>>,
@@ -6,17 +7,19 @@ struct Arena<T> {
     size: usize,
 }
 
+#[derive(Debug)]
 enum Entry<T> {
     Occupied(OccupiedEntry<T>),
     Vacant(usize),
 }
 
+#[derive(Debug)]
 struct OccupiedEntry<T> {
     item: T,
     mark: bool,
 }
 
-impl<T> Entry<T> {
+impl<T: Debug> Entry<T> {
     fn insert(&mut self, t: T) -> Option<usize> {
         if let Entry::Vacant(index) = *self {
             *self = Entry::Occupied(OccupiedEntry{item: t, mark: false});
@@ -33,7 +36,7 @@ impl<T> Entry<T> {
     }
 }
 
-impl<T> Arena<T> {
+impl<T: Debug> Arena<T> {
     fn new(capacity: usize) -> Self {
         let mut storage = Vec::with_capacity(capacity);
         for i in 0..(capacity - 1) {
@@ -90,7 +93,7 @@ pub struct ArenaSet<T> {
     capacity: usize,
 }
 
-impl<T> ArenaSet<T> {
+impl<T: Debug> ArenaSet<T> {
     pub fn new(arena_capacity: usize) -> Self {
         let mut arenas = Vec::new();
         arenas.push(Box::new(Arena::new(arena_capacity)));
@@ -175,5 +178,11 @@ impl<T> Deref for ArenaPtr<T> {
         unsafe {
             &(*self.entry).item
         }
+    }
+}
+
+impl<T> PartialEq for ArenaPtr<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.entry == other.entry
     }
 }

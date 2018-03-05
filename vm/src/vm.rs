@@ -1,6 +1,7 @@
 use chunk::Chunk;
 use gc::Gc;
 use gc::value::Value;
+use gc::value::Variant;
 
 pub struct VM {
     stack: Vec<Value>,
@@ -8,8 +9,6 @@ pub struct VM {
     chunk: Chunk,
     gc: Gc,
 }
-
-// FIXME: Memory is leaked right now on shutdown. None of the gc roots will be collected.
 
 impl VM {
     pub fn new(chunk: Chunk, gc: Gc) -> Self {
@@ -153,5 +152,16 @@ impl VM {
         self.stack.last()
             .expect("stack to be nonempty")
             .clone()
+    }
+}
+
+impl Drop for VM {
+    fn drop(&mut self) {
+        for constant in self.chunk.constants() {
+            if let Variant::Obj(ref o) = constant.decode() {
+                // Unroot all non-primitive constants.
+                unsafe { self.gc.unroot(*o); }
+            }
+        }
     }
 }
