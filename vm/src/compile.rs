@@ -167,7 +167,7 @@ impl<'g> Compiler<'g> {
             }
             Literal::String(ref s) => {
                 let handle = self.gc.allocate_string(s.clone());
-                self.gc.root(handle);
+                unsafe { self.gc.root(handle) };
                 let idx = self.chunk.add_constant(handle.into_value());
                 self.emit(Op::Constant(idx));
             }

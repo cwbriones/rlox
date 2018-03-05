@@ -31,7 +31,7 @@ impl Display for Object {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 pub struct ObjectHandle {
     ptr: ArenaPtr<Object>
 }

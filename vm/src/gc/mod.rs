@@ -62,8 +62,16 @@ impl Gc {
         ObjectHandle::new(self.objects.allocate(obj))
     }
 
-    pub fn root(&mut self, obj: ObjectHandle) {
+    // unsafe because it directly affects collection.
+    pub unsafe fn root(&mut self, obj: ObjectHandle) {
         self.roots.push(obj);
+    }
+
+    // unsafe because it directly affects collection.
+    pub unsafe fn unroot(&mut self, obj: ObjectHandle) {
+        if let Some(index) = self.roots.iter().position(|o| *o == obj) {
+            self.roots.remove(index);
+        }
     }
 
     fn on_allocation(&mut self) {
@@ -89,4 +97,3 @@ impl Gc {
         self.next_gc *= GC_GROW_FACTOR;
     }
 }
-
