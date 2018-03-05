@@ -37,10 +37,13 @@ impl Scopes {
     }
 
     fn resolve_local(&mut self, var: &mut Variable) {
-        for (depth, scope) in self.scopes.iter().rev().enumerate() {
+        // We skip the first scope to treat it as global.
+        let scopes_iter = self.scopes.iter().skip(1).rev();
+
+        for (depth, scope) in scopes_iter.enumerate() {
             if scope.contains_key(var.name()) {
                 debug!("var '{}' resolved to a depth {}", var.name(), depth);
-                var.resolve(depth);
+                var.resolve_local(depth);
                 return;
             }
         }

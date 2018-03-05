@@ -1,4 +1,5 @@
 use chunk::Chunk;
+use gc::value::Value;
 
 pub struct Disassembler<'c> {
     offset: usize,
@@ -18,6 +19,7 @@ impl<'c> Disassembler<'c> {
     pub fn disassemble(mut self) {
         let bytes = self.chunk.as_ref();
         println!("== {} ==", self.chunk.name());
+        println!("IP   LINE");
         while self.offset < bytes.len() {
             self.disassemble_instruction();
         }
@@ -64,6 +66,20 @@ impl<'c> Disassembler<'c> {
         println!("OP_JZE {}", ip);
     }
 
+    fn get_global(&mut self) {
+        let val = self.read_constant();
+        println!("GET_GLOBAL {:?}", val);
+    }
+
+    fn set_global(&mut self) {
+        let val = self.read_constant();
+        println!("SET_GLOBAL {:?}", val);
+    }
+
+    fn define_global(&self) {
+        println!("DEFINE_GLOBAL");
+    }
+
     fn read_byte(&mut self) -> u8 {
         self.offset += 1;
         self.chunk.as_ref()[self.offset - 1]
@@ -74,5 +90,10 @@ impl<'c> Disassembler<'c> {
         let lo = self.chunk.get(self.offset - 2) as u16;
         let hi = self.chunk.get(self.offset - 1) as u16;
         lo + (hi << 8)
+    }
+
+    fn read_constant(&mut self) -> Value {
+        let idx = self.read_byte();
+        *self.chunk.get_constant(idx).expect("invalid constant segment index")
     }
 }

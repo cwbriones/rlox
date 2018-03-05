@@ -56,6 +56,11 @@ impl Chunk {
         self.lines[idx].line
     }
 
+    pub fn set_name(&mut self, name: &str) {
+        self.name.clear();
+        self.name.push_str(name);
+    }
+
     pub fn name(&self) -> &str {
         &self.name
     }
@@ -120,9 +125,9 @@ pub enum Op {
     Pop,
     // GetLocal,
     // SetLocal,
-    // GetGlobal,
+    GetGlobal,
     // DefineGlobal,
-    // SetGlobal,
+    SetGlobal,
     // GetUpValue,
     // SetUpValue,
     // GetProperty,
@@ -194,6 +199,8 @@ impl Op {
             Op::Jump => buf.push(0x0c),
             Op::JumpIfFalse => buf.push(0x0d),
             Op::Pop => buf.push(0x0e),
+            Op::GetGlobal => buf.push(0x0f),
+            Op::SetGlobal => buf.push(0xf0),
         }
     }
 }
@@ -216,6 +223,8 @@ macro_rules! decode_op {
             0x0c => $this.jmp(),
             0x0d => $this.jze(),
             0x0e => { $this.pop(); },
+            0x0f => $this.get_global(),
+            0xf0 => $this.set_global(),
             _ => {
                 panic!("Unknown op {}", $op);
             }

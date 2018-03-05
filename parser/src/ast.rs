@@ -58,6 +58,11 @@ pub struct Variable {
     depth: Option<usize>,
 }
 
+pub enum Scope {
+    Global,
+    Local(usize)
+}
+
 impl Variable {
     pub fn new_global(name: &str) -> Self {
         Variable {
@@ -73,7 +78,7 @@ impl Variable {
         }
     }
 
-    pub fn resolve(&mut self, depth: usize) {
+    pub fn resolve_local(&mut self, depth: usize) {
         self.depth = Some(depth);
     }
 
@@ -81,8 +86,10 @@ impl Variable {
         &self.name
     }
 
-    pub fn depth(&self) -> Option<usize> {
+    pub fn scope(&self) -> Scope {
         self.depth
+            .map(Scope::Local)
+            .unwrap_or(Scope::Global)
     }
 }
 

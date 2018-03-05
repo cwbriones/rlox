@@ -1,5 +1,8 @@
+use std::collections::HashMap;
+
 use chunk::Chunk;
 use gc::Gc;
+use gc::object::Object;
 use gc::value::Value;
 use gc::value::Variant;
 
@@ -8,6 +11,7 @@ pub struct VM {
     ip: usize,
     chunk: Chunk,
     gc: Gc,
+    globals: HashMap<String, Value>,
 }
 
 impl VM {
@@ -17,6 +21,7 @@ impl VM {
             ip: 0,
             chunk,
             gc,
+            globals: HashMap::new(),
         }
     }
 
@@ -123,6 +128,54 @@ impl VM {
         if self.peek().falsey() {
             self.ip = ip as usize;
         }
+    }
+
+    fn get_global(&mut self) {
+        let idx = self.read_byte();
+        let val = *self.chunk.get_constant(idx).unwrap();
+
+        if let Variant::Obj(h) = val.decode() {
+            match *h {
+                Object::String(ref s) => {
+                    let val = *self.globals.get(s).expect("undefined global");
+                    self.stack.push(val);
+                    return;
+                },
+            }
+        }
+        panic!("GET_GLOBAL constant was not a string");
+    }
+
+    fn set_global(&mut self) {
+        let idx = self.read_byte();
+        let val = *self.chunk.get_constant(idx).unwrap();
+
+        if let Variant::Obj(h) = val.decode() {
+            match *h {
+                Object::String(ref s) => {
+                    let lhs = self.pop();
+                    self.globals.insert(s.clone(), lhs);
+                    return;
+                },
+            }
+        }
+        panic!("SET_GLOBAL constant was not a string");
+    }
+
+    fn define_global(&mut self) {
+        let idx = self.read_byte();
+        let val = *self.chunk.get_constant(idx).unwrap();
+
+        if let Variant::Obj(h) = val.decode() {
+            match *h {
+                Object::String(ref s) => {
+                    let lhs = self.pop();
+                    self.globals.insert(s.clone(), lhs);
+                    return;
+                },
+            }
+        }
+        panic!("DEF_GLOBAL constant was not a string");
     }
 
     fn read_byte(&mut self) -> u8 {
