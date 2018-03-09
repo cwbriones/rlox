@@ -1,1 +1,1 @@
-print 42 / 0;
+print 42 / 0; // expect runtime error: division by zero

@@ -1,5 +1,5 @@
-print clock;
+print clock; // expect: <builtin 'clock'>
 var first_run = 1512537400;
 if (clock() > first_run) {
-    print "time passes...";
+    print "time passes..."; // expect: time passes...
 }

@@ -2,22 +2,22 @@ var num = 1;
 var str = "hello";
 var bool = true;
 
-print num == num;
-print num == 2;
-print num == str;
-print num == bool;
-print num == nil;
+print num == num; // expect: true
+print num == 2; // expect: false
+print num == str; // expect: false
+print num == bool; // expect: false
+print num == nil; // expect: false
 
-print bool == bool;
-print bool == false;
-print bool == str;
-print bool == nil;
+print bool == bool; // expect: true
+print bool == false; // expect: false
+print bool == str; // expect: false
+print bool == nil; // expect: false
 
-print str == str;
-print str == "world";
-print str == nil;
+print str == str; // expect: true
+print str == "world"; // expect: false
+print str == nil; // expect: false
 
-print nil == nil;
+print nil == nil; // expect: true
 
 fun function() {
     fun inner() {}
@@ -27,10 +27,10 @@ fun function() {
 var f1 = function();
 var f2 = function();
 
-print f1 == f1;
-print f2 == f2;
-print f1 == f2;
-print f1 == num;
-print f1 == str;
-print f1 == bool;
-print f1 == nil;
+print f1 == f1; // expect: true
+print f2 == f2; // expect: true
+print f1 == f2; // expect: false
+print f1 == num; // expect: false
+print f1 == str; // expect: false
+print f1 == bool; // expect: false
+print f1 == nil; // expect: false

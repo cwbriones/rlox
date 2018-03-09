@@ -1,6 +1,7 @@
 use std::fs::{self, File};
 use std::process::Command;
-use std::io::Read;
+use std::io::prelude::*;
+use std::io::BufReader;
 
 #[cfg(debug_assertions)]
 const BINARY: &str = "target/debug/rlox";
@@ -8,30 +9,57 @@ const BINARY: &str = "target/debug/rlox";
 #[cfg(not(debug_assertions))]
 const BINARY: &str = "target/release/rlox";
 
+const EXPECT: &str = "expect: ";
+const EXPECT_ERR: &str = "expect runtime error: ";
+const ERR_LOG: &str = "[error]: ";
+
 fn execute_test(filename: &str) {
-    let output_file = filename.to_owned() + ".out";
-
     fs::metadata(BINARY).expect("Could not locate binary");
-    fs::metadata(filename).expect("Could not locate testcase");
 
-    let mut expected_output = String::new();
+    let file =
+        File::open(&filename).expect("Could not open testcase file");
 
-    File::open(&output_file)
-        .expect("Could not locate testcase output")
-        .read_to_string(&mut expected_output)
-        .expect("Failed to read output file");
+    let file = BufReader::new(file);
+
+    // Create an iterator over "expect" comments
+    let expects =
+        file.lines()
+            .map(|l| l.expect("should be valid UTF-8"))
+            .filter_map(|mut line| {
+                line.find("// expect").map(|idx| line.split_off(idx + 3))
+            });
+
+    let mut expected_out = String::new();
+    let mut expected_err = String::new();
+    for expect in expects {
+        if expect.starts_with(EXPECT) {
+            let o = &expect[EXPECT.len()..].trim();
+            expected_out.push_str(o);
+            expected_out.push('\n');
+        } else if expect.starts_with(EXPECT_ERR) {
+            let o = &expect[EXPECT_ERR.len()..].trim();
+            expected_err.push_str(ERR_LOG);
+            expected_err.push_str(o);
+            expected_err.push('\n');
+        }
+    }
+    // Fix newlines.
+    expected_out = expected_out.replace("\\n", "\n");
+    expected_err = expected_err.replace("\\n", "\n");
 
     let output =
         Command::new(BINARY)
             .args(&[filename])
             .output()
             .expect("Failed to execute process");
-    let output = if output.status.success() {
-       String::from_utf8_lossy(&output.stdout)
+
+    if output.status.success() {
+       let output = String::from_utf8_lossy(&output.stdout);
+       assert_eq!(expected_out, output);
     } else {
-       String::from_utf8_lossy(&output.stderr)
+       let output = String::from_utf8_lossy(&output.stderr);
+       assert_eq!(expected_err, output);
     };
-    assert_eq!(output, expected_output);
 }
 
 macro_rules! define_test (

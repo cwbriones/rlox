@@ -6,16 +6,17 @@ var c = "global c";
     var b = "outer b";
     {
         var a = "inner a";
-        print a;
-        print b;
-        print c;
+        print a; // expect: inner a
+        print b; // expect: outer b
+        print c; // expect: global c
     }
-    print a;
-    print b;
-    print c;
+    print a; // expect: outer a
+    print b; // expect: outer b
+    print c; // expect: global c
 }
-print a;
-print b;
-print c;
+print a; // expect: global a
+print b; // expect: global b
+print c; // expect: global c
 a = "reassigned a";
-print a;
+print a; // expect: reassigned a
+

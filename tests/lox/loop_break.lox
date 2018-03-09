@@ -3,14 +3,14 @@ while (true) {
     var a = "inner";
     break;
 }
-print "broke!";
-print a;
+print "broke!"; // expect: broke!
+print a; // expect: outer
 
 while (true) {
     while (true) {
         break;
     }
-    print "break 1";
+    print "break 1"; // expect: break 1
     break;
 }
-print "break 2";
+print "break 2"; // expect: break 2

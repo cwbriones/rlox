@@ -1,4 +1,4 @@
 for (var a = 5; a > 0; a = a - 1) {
-    print a;
+    print a; // expect: 5\n4\n3\n2\n1
 }
-print "BOOM!";
+print "BOOM!"; // expect: BOOM!

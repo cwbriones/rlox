@@ -36,4 +36,5 @@ var list = List();
 for (var i = 10; i >= 1; i = i - 1) {
     list.push(i);
 }
+// expect: 1\n2\n3\n4\n5\n6\n7\n8\n9\n10
 list.foreach(fun(i) { print i; });

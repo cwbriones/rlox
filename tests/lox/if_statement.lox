@@ -1,8 +1,8 @@
-if (true) print "True";
+if (true) print "True"; // expect: True
 if (nil) print "False";
 
 if (true) {
-    print "this";
+    print "this"; // expect: this
 } else {
     print "that";
 }
@@ -10,10 +10,11 @@ if (true) {
 if (false) {
     print "this";
 } else {
-    print "that";
+    print "that"; // expect: that
 }
 
 // From the ambiguous example
-if (true) if (false) print "whenTrue"; else print "whenFalse";
+if (true) if (false) print "whenTrue1"; else print "whenFalse1"; // expect: whenFalse1
+
 // Prints nothing
-if (false) if (true) print "whenTrue"; else print "whenFalse";
+if (false) if (true) print "whenTrue2"; else print "whenFalse2";

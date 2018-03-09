@@ -4,7 +4,7 @@ class Cake {
     }
 
     bake() {
-        print "Baking a " + this.kind + " cake at 300F...";
+        print "Baking a " + this.kind + " cake at 300F..."; // expect: Baking a chocolate cake at 300F...
     }
 }
 

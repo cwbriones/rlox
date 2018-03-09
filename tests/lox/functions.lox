@@ -1,6 +1,6 @@
 // Simple function
 fun hello(name) {
-    print "hello " + name;
+    print "hello " + name; // expect: hello world
 }
 hello("world");
 
@@ -12,7 +12,7 @@ fun fib(n) {
         return fib(n - 1) + fib(n - 2);
     }
 }
-print fib(9);
+print fib(9); // expect: 55
 
 // Closures
 var total = "global";
@@ -26,11 +26,11 @@ fun incrementer(n) {
 }
 
 var inc = incrementer(3);
-print inc();
-print inc();
-print inc();
+print inc(); // expect: 3
+print inc(); // expect: 6
+print inc(); // expect: 9
 
-print total;
+print total; // expect: global
 
 // Nested functions
 fun a(one) {
@@ -42,4 +42,4 @@ fun a(one) {
     }
     return b;
 }
-print a("nested")("function")("calls");
+print a("nested")("function")("calls"); // expect: nested function calls

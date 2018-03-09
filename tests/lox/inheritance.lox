@@ -17,5 +17,5 @@ class B < A {
 class C < B {}
 
 var c = C();
-c.test();
-c.method();
+c.test(); // expect: A method
+c.method(); // expect: B method
