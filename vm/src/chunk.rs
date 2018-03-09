@@ -1,4 +1,7 @@
+use gc::Gc;
 use gc::value::Value;
+use gc::value::Variant;
+use gc::object::Object;
 
 pub struct Chunk {
     code: Vec<u8>,
@@ -81,6 +84,25 @@ impl Chunk {
         self.constants.get(idx as usize)
     }
 
+    pub fn string_constant(&mut self, gc: &mut Gc, string: &str) -> u8 {
+        // Scan constants for one that already exists
+        for (i, c) in self.constants().enumerate() {
+            if let Variant::Obj(obj) = c.decode() {
+                match *obj {
+                    Object::String(ref s) if s == string => {
+                        return i as u8;
+                    },
+                    _ => {},
+                }
+            }
+        }
+
+        // Allocate a new string.
+        let handle = gc.allocate_string(string.to_owned());
+        unsafe { gc.root(handle) };
+        self.add_constant(handle.into_value())
+    }
+
     pub fn len(&self) -> usize {
         self.code.len()
     }
@@ -123,8 +145,8 @@ pub enum Op {
     // True,
     // False,
     Pop,
-    // GetLocal,
-    // SetLocal,
+    GetLocal,
+    SetLocal,
     GetGlobal,
     // DefineGlobal,
     SetGlobal,
@@ -201,6 +223,8 @@ impl Op {
             Op::Pop => buf.push(0x0e),
             Op::GetGlobal => buf.push(0x0f),
             Op::SetGlobal => buf.push(0xf0),
+            Op::GetLocal => buf.push(0xf1),
+            Op::SetLocal => buf.push(0xf2),
         }
     }
 }
@@ -225,6 +249,8 @@ macro_rules! decode_op {
             0x0e => { $this.pop(); },
             0x0f => $this.get_global(),
             0xf0 => $this.set_global(),
+            0xf1 => $this.get_local(),
+            0xf2 => $this.set_local(),
             _ => {
                 panic!("Unknown op {}", $op);
             }

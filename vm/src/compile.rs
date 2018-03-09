@@ -9,6 +9,8 @@ pub struct Compiler<'g> {
     chunk: Chunk,
     line: usize,
     gc: &'g mut Gc,
+    locals: Vec<(String, usize)>,
+    scope_depth: usize,
 }
 
 impl<'g> Compiler<'g> {
@@ -17,6 +19,8 @@ impl<'g> Compiler<'g> {
             chunk: Chunk::new("<unnamed chunk>".into()),
             line: 1,
             gc,
+            locals: Vec::new(),
+            scope_depth: 0,
         }
     }
 
@@ -43,10 +47,11 @@ impl<'g> Compiler<'g> {
                 self.emit(Op::Pop); // expression is unused
             },
             Stmt::Block(ref stmts) => {
-                // TODO: Proper scope.
+                self.scope_depth += 1;
                 for s in stmts {
                     self.compile_stmt(s);
                 }
+                self.scope_depth -= 1;
             },
             Stmt::If(ref cond, ref then_clause, ref else_clause) => {
                 self.compile_expr(cond);
@@ -87,17 +92,17 @@ impl<'g> Compiler<'g> {
                 match var.scope() {
                     Scope::Global => {
                         self.emit(Op::SetGlobal);
-                        let handle = self.gc.allocate_string(var.name().into());
-                        unsafe { self.gc.root(handle) };
-                        let idx = self.chunk.add_constant(handle.into_value());
+                        let idx = self.chunk.string_constant(self.gc, var.name());
                         self.emit_byte(idx);
                     },
                     Scope::Local(d) => {
-                        unimplemented!("local variables {}", d);
+                        let idx = self.resolve_local(var.name(), d);
+                        self.emit(Op::SetLocal);
+                        self.emit_byte(idx);
                     },
                 }
             }
-            _ => unimplemented!(),
+            ref s => unimplemented!("{:?}", s),
         }
     }
 
@@ -151,17 +156,33 @@ impl<'g> Compiler<'g> {
                 match var.scope() {
                     Scope::Global => {
                         self.emit(Op::GetGlobal);
-                        let handle = self.gc.allocate_string(var.name().into());
-                        unsafe { self.gc.root(handle) };
-                        let idx = self.chunk.add_constant(handle.into_value());
+                        let idx = self.chunk.string_constant(self.gc, var.name());
                         self.emit_byte(idx);
                     },
                     Scope::Local(d) => {
-                        unimplemented!("local variables {}", d);
+                        let idx = self.resolve_local(var.name(), d);
+                        self.emit(Op::GetLocal);
+                        self.emit_byte(idx);
                     },
                 }
             }
-            _ => unimplemented!(),
+            Expr::Assign(ref var, ref expr) => {
+                self.compile_expr(expr);
+                match var.scope() {
+                    Scope::Global => {
+                        self.emit(Op::SetGlobal);
+                        // This constant should already exist, search the table.
+                        let idx = self.chunk.string_constant(self.gc, var.name());
+                        self.emit_byte(idx);
+                    },
+                    Scope::Local(d) => {
+                        let idx = self.resolve_local(var.name(), d);
+                        self.emit(Op::SetLocal);
+                        self.emit_byte(idx);
+                    },
+                }
+            },
+            ref e => unimplemented!("{:?}", e),
         }
     }
 
@@ -183,6 +204,23 @@ impl<'g> Compiler<'g> {
         self.patch_jmp(end_jmp);
     }
 
+    fn resolve_local(&mut self, var: &str, depth: usize) -> u8 {
+        // Find the local variable with this depth
+        let depth = self.scope_depth - depth;
+
+        for (i, &(ref v, d)) in self.locals.iter().enumerate() {
+            if v == var && d == depth {
+                return i as u8;
+            }
+        }
+        if self.locals.len() == ::std::u8::MAX as usize {
+            panic!("TOO MANY LOCAL VARIABLES");
+        }
+        self.locals.push((var.into(), depth));
+
+        (self.locals.len() - 1) as u8
+    }
+
     fn emit_constant(&mut self, lit: &Literal) {
         match *lit {
             Literal::Nil => self.emit(Op::Constant(0)),
@@ -194,9 +232,7 @@ impl<'g> Compiler<'g> {
                 self.emit(Op::Constant(idx));
             }
             Literal::String(ref s) => {
-                let handle = self.gc.allocate_string(s.clone());
-                unsafe { self.gc.root(handle) };
-                let idx = self.chunk.add_constant(handle.into_value());
+                let idx = self.chunk.string_constant(self.gc, s);
                 self.emit(Op::Constant(idx));
             }
         }
