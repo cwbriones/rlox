@@ -19,6 +19,11 @@ impl<'c> Disassembler<'c> {
     pub fn disassemble(mut self) {
         let bytes = self.chunk.as_ref();
         println!("== {} ==", self.chunk.name());
+        println!("CONSTANTS");
+        for (i, c) in self.chunk.constants().enumerate() {
+            println!("{} {}", i, c);
+        }
+        println!("=========");
         println!("IP   LINE");
         while self.offset < bytes.len() {
             self.disassemble_instruction();
@@ -80,10 +85,21 @@ impl<'c> Disassembler<'c> {
         println!("DEFINE_GLOBAL");
     }
 
+    fn get_local(&mut self) {
+        let val = self.read_byte();
+        println!("GET_LOCAL({})", val);
+    }
+
+    fn set_local(&mut self) {
+        let val = self.read_byte();
+        println!("SET_LOCAL({})", val);
+    }
+
     fn read_byte(&mut self) -> u8 {
         self.offset += 1;
         self.chunk.as_ref()[self.offset - 1]
     }
+
 
     fn read_u16(&mut self) -> u16 {
         self.offset += 2;

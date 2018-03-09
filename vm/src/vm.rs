@@ -12,6 +12,7 @@ pub struct VM {
     chunk: Chunk,
     gc: Gc,
     globals: HashMap<String, Value>,
+    locals: [Value; 256],
 }
 
 impl VM {
@@ -22,6 +23,7 @@ impl VM {
             chunk,
             gc,
             globals: HashMap::new(),
+            locals: [Value::nil(); 256],
         }
     }
 
@@ -138,7 +140,7 @@ impl VM {
             match *h {
                 Object::String(ref s) => {
                     let val = *self.globals.get(s).expect("undefined global");
-                    self.stack.push(val);
+                    self.push(val);
                     return;
                 },
             }
@@ -155,6 +157,7 @@ impl VM {
                 Object::String(ref s) => {
                     let lhs = self.pop();
                     self.globals.insert(s.clone(), lhs);
+                    self.push(lhs);
                     return;
                 },
             }
@@ -176,6 +179,20 @@ impl VM {
             }
         }
         panic!("DEF_GLOBAL constant was not a string");
+    }
+
+    fn get_local(&mut self) {
+        let idx = self.read_byte();
+        let val = self.locals[idx as usize];
+        self.push(val);
+    }
+
+    fn set_local(&mut self) {
+        let idx = self.read_byte();
+        // We peek because we would just push it back after
+        // the assignment occurs.
+        let val = self.peek();
+        self.locals[idx as usize] = val;
     }
 
     fn read_byte(&mut self) -> u8 {
