@@ -2,27 +2,28 @@ use std::fs::{self, File};
 use std::process::Command;
 use std::io::prelude::*;
 use std::io::BufReader;
+use std::path::PathBuf;
+use std::env;
 
 #[cfg(debug_assertions)]
-const BINARY: &str = "target/debug/rlox";
+const BINARY: &str = "../target/debug/rlox";
 
 #[cfg(not(debug_assertions))]
-const BINARY: &str = "target/release/rlox";
+const BINARY: &str = "../target/release/rlox";
 
 const EXPECT: &str = "expect: ";
 const EXPECT_ERR: &str = "expect runtime error: ";
 const ERR_LOG: &str = "[error]: ";
 
-#[test]
-fn foo() {
-    panic!("This should fail");
-}
-
 fn execute_test(filename: &str) {
     fs::metadata(BINARY).expect("Could not locate binary");
 
-    let file =
-        File::open(&filename).expect("Could not open testcase file");
+    let mut path = env::current_dir().unwrap();
+    path.pop();
+    path.push(filename);
+    println!("{:?}", path);
+
+    let file = File::open(&path).expect("Could not open testcase file {}");
 
     let file = BufReader::new(file);
 
@@ -54,7 +55,7 @@ fn execute_test(filename: &str) {
 
     let output =
         Command::new(BINARY)
-            .args(&[filename])
+            .args(&[path])
             .output()
             .expect("Failed to execute process");
 
@@ -71,7 +72,7 @@ macro_rules! define_test (
     ($name:ident) => (
         #[test]
         fn $name() {
-            let filename = concat!("tests/lox/", stringify!($name), ".lox");
+            let filename = concat!("tests/", stringify!($name), ".lox");
             execute_test(filename);
         }
     );
