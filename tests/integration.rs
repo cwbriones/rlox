@@ -13,6 +13,11 @@ const EXPECT: &str = "expect: ";
 const EXPECT_ERR: &str = "expect runtime error: ";
 const ERR_LOG: &str = "[error]: ";
 
+#[test]
+fn foo() {
+    panic!("This should fail");
+}
+
 fn execute_test(filename: &str) {
     fs::metadata(BINARY).expect("Could not locate binary");
 

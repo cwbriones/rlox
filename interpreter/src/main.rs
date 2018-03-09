@@ -22,7 +22,7 @@ mod repl;
 mod pretty_printer;
 
 fn main() {
-    env_logger::init().expect("Failed to initialize logger");
+    env_logger::init();
 
     let mut args = env::args();
     let _ = args.next();
