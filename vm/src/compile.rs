@@ -27,9 +27,6 @@ impl<'g> Compiler<'g> {
     pub fn compile(mut self, name: &str, stmts: &[Stmt]) -> Chunk {
         // Singleton values are always the first 3 constants in a chunk.
         self.chunk.set_name(name);
-        self.chunk.add_constant(Value::nil());
-        self.chunk.add_constant(Value::truelit());
-        self.chunk.add_constant(Value::falselit());
         for stmt in stmts {
             self.compile_stmt(stmt);
         }
@@ -223,13 +220,28 @@ impl<'g> Compiler<'g> {
 
     fn emit_constant(&mut self, lit: &Literal) {
         match *lit {
-            Literal::Nil => self.emit(Op::Constant(0)),
-            Literal::True => self.emit(Op::Constant(1)),
-            Literal::False => self.emit(Op::Constant(2)),
+            Literal::Nil => self.emit(Op::Nil),
+            Literal::True => self.emit(Op::True),
+            Literal::False => self.emit(Op::False),
             Literal::Number(n) => {
-                let value = Value::float(n);
-                let idx = self.chunk.add_constant(value);
-                self.emit(Op::Constant(idx));
+                self.emit(Op::Immediate);
+                let val = Value::float(n).into_raw();
+                let b1 = (val & 0xff) as u8;
+                let b2 = ((val >> 8) & 0xff) as u8;
+                let b3 = ((val >> 16) & 0xff) as u8;
+                let b4 = ((val >> 24) & 0xff) as u8;
+                let b5 = ((val >> 32) & 0xff) as u8;
+                let b6 = ((val >> 40) & 0xff) as u8;
+                let b7 = ((val >> 48) & 0xff) as u8;
+                let b8 = ((val >> 56) & 0xff) as u8;
+                self.chunk.write_byte(b1);
+                self.chunk.write_byte(b2);
+                self.chunk.write_byte(b3);
+                self.chunk.write_byte(b4);
+                self.chunk.write_byte(b5);
+                self.chunk.write_byte(b6);
+                self.chunk.write_byte(b7);
+                self.chunk.write_byte(b8);
             }
             Literal::String(ref s) => {
                 let idx = self.chunk.string_constant(self.gc, s);

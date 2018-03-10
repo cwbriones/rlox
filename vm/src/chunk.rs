@@ -141,9 +141,9 @@ impl AsRef<[u8]> for Chunk {
 pub enum Op {
     Return,
     Constant(u8),
-    // Nil,
-    // True,
-    // False,
+    Nil,
+    True,
+    False,
     Pop,
     GetLocal,
     SetLocal,
@@ -167,6 +167,7 @@ pub enum Op {
     Print,
     Jump,
     JumpIfFalse,
+    Immediate,
     // Loop,
     // Call_0,
     // Call_1,
@@ -225,6 +226,10 @@ impl Op {
             Op::SetGlobal => buf.push(0xf0),
             Op::GetLocal => buf.push(0xf1),
             Op::SetLocal => buf.push(0xf2),
+            Op::Immediate => buf.push(0xf3),
+            Op::Nil => buf.push(0xf4),
+            Op::True => buf.push(0xf5),
+            Op::False => buf.push(0xf6),
         }
     }
 }
@@ -251,6 +256,10 @@ macro_rules! decode_op {
             0xf0 => $this.set_global(),
             0xf1 => $this.get_local(),
             0xf2 => $this.set_local(),
+            0xf3 => $this.immediate(),
+            0xf4 => $this.imm_nil(),
+            0xf5 => $this.imm_true(),
+            0xf6 => $this.imm_false(),
             _ => {
                 panic!("Unknown op {}", $op);
             }

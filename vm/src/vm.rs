@@ -195,6 +195,40 @@ impl VM {
         self.locals[idx as usize] = val;
     }
 
+    fn immediate(&mut self) {
+        self.ip += 8;
+        let b1 = self.chunk.get(self.ip - 8) as u64;
+        let b2 = self.chunk.get(self.ip - 7) as u64;
+        let b3 = self.chunk.get(self.ip - 6) as u64;
+        let b4 = self.chunk.get(self.ip - 5) as u64;
+        let b5 = self.chunk.get(self.ip - 4) as u64;
+        let b6 = self.chunk.get(self.ip - 3) as u64;
+        let b7 = self.chunk.get(self.ip - 2) as u64;
+        let b8 = self.chunk.get(self.ip - 1) as u64;
+        let raw = b1 +
+            (b2 << 8) +
+            (b3 << 16) +
+            (b4 << 24) +
+            (b5 << 32) +
+            (b6 << 40) +
+            (b7 << 48) +
+            (b8 << 56);
+        let val = unsafe { Value::from_raw(raw) };
+        self.push(val);
+    }
+
+    fn imm_nil(&mut self) {
+        self.push(Value::nil());
+    }
+
+    fn imm_true(&mut self) {
+        self.push(Value::truelit());
+    }
+
+    fn imm_false(&mut self) {
+        self.push(Value::falselit());
+    }
+
     fn read_byte(&mut self) -> u8 {
         self.ip += 1;
         self.chunk.get(self.ip - 1)

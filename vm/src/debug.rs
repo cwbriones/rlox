@@ -95,6 +95,40 @@ impl<'c> Disassembler<'c> {
         println!("SET_LOCAL({})", val);
     }
 
+    fn immediate(&mut self) {
+        self.offset += 8;
+        let b1 = self.chunk.get(self.offset - 8) as u64;
+        let b2 = self.chunk.get(self.offset - 7) as u64;
+        let b3 = self.chunk.get(self.offset - 6) as u64;
+        let b4 = self.chunk.get(self.offset - 5) as u64;
+        let b5 = self.chunk.get(self.offset - 4) as u64;
+        let b6 = self.chunk.get(self.offset - 3) as u64;
+        let b7 = self.chunk.get(self.offset - 2) as u64;
+        let b8 = self.chunk.get(self.offset - 1) as u64;
+        let raw = b1 + 
+            (b2 << 8) + 
+            (b3 << 16) + 
+            (b4 << 24) +
+            (b5 << 32) +
+            (b6 << 40) +
+            (b7 << 48) +
+            (b8 << 56);
+        let val = unsafe { Value::from_raw(raw) };
+        println!("IMM_FLOAT {}", val);
+    }
+
+    fn imm_nil(&self) {
+        println!("IMM_NIL");
+    }
+
+    fn imm_true(&self) {
+        println!("IMM_TRUE");
+    }
+
+    fn imm_false(&self) {
+        println!("IMM_FALSE");
+    }
+
     fn read_byte(&mut self) -> u8 {
         self.offset += 1;
         self.chunk.as_ref()[self.offset - 1]
