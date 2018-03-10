@@ -29,6 +29,14 @@ const FALSE: u64 = QNAN | TAG_FALSE;
 const NIL: u64 = QNAN | TAG_NIL;
 
 impl Value {
+    pub unsafe fn from_raw(raw: u64) -> Self {
+        Value { raw }
+    }
+
+    pub fn into_raw(self) -> u64 {
+        self.raw
+    }
+
     pub fn float(f: f64) -> Self {
         Value {
             raw: unsafe { transmute(f) }
