@@ -129,6 +129,10 @@ impl<'c> Disassembler<'c> {
         println!("IMM_FALSE");
     }
 
+    fn call(&self, arity: u8) {
+        println!("CALL_{}", arity);
+    }
+
     fn read_byte(&mut self) -> u8 {
         self.offset += 1;
         self.chunk.as_ref()[self.offset - 1]

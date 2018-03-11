@@ -1,6 +1,8 @@
 use self::arena::ArenaSet;
 use self::object::Object;
 use self::object::ObjectHandle;
+use self::value::Value;
+use self::value::Variant;
 
 pub mod value;
 pub mod object;
@@ -43,7 +45,6 @@ pub struct Gc {
     objects: ArenaSet<Object>,
     allocations: usize,
     next_gc: usize,
-    roots: Vec<ObjectHandle>,
 }
 
 impl Gc {
@@ -52,40 +53,56 @@ impl Gc {
             objects: ArenaSet::new(ARENASET_CAPACITY),
             allocations: 0,
             next_gc: INITIAL_NEXT_GC,
-            roots: Vec::new(),
         }
     }
 
-    pub fn allocate_string(&mut self, s: String) -> ObjectHandle {
-        self.on_allocation();
+    pub fn allocate<F, I>(&mut self, obj: Object, roots_fn: F) -> ObjectHandle
+        where
+            F: FnOnce() -> I,
+            I: Iterator<Item=Value>,
+    {
+        self.on_allocation(roots_fn);
+        ObjectHandle::new(self.objects.allocate(obj))
+    }
+
+    pub fn allocate_string<F, I>(&mut self, s: String, roots_fn: F) -> ObjectHandle 
+        where
+            F: FnOnce() -> I,
+            I: Iterator<Item=Value>,
+    {
+        self.on_allocation(roots_fn);
         let obj = Object::string(s);
         ObjectHandle::new(self.objects.allocate(obj))
     }
 
-    // unsafe because it directly affects collection.
-    pub unsafe fn root(&mut self, obj: ObjectHandle) {
-        self.roots.push(obj);
-    }
-
-    // unsafe because it directly affects collection.
-    pub unsafe fn unroot(&mut self, obj: ObjectHandle) {
-        if let Some(index) = self.roots.iter().position(|o| *o == obj) {
-            self.roots.remove(index);
-        }
-    }
-
-    fn on_allocation(&mut self) {
+    fn on_allocation<F, I>(&mut self, roots: F)
+        where
+            F: FnOnce() -> I,
+            I: Iterator<Item=Value>
+    {
         self.allocations += 1;
         if self.allocations > self.next_gc {
-            self.gc_collect();
+            self.gc_collect(roots);
         }
     }
 
-    fn gc_collect(&mut self) {
+    fn gc_collect<F, I>(&mut self, roots: F) 
+        where
+            F: FnOnce() -> I,
+            I: Iterator<Item=Value>
+    {
         // Mark
-        for root in &mut self.roots {
+        let roots = roots().filter_map(|v| {
+            if let Variant::Obj(obj) = v.decode() {
+                Some(obj)
+            } else {
+                None
+            }
+        });
+        for mut root in roots {
             if root.is_marked() {
                 root.mark();
+                // root.trace();
             }
         }
 
