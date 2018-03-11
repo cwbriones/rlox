@@ -1,4 +1,5 @@
 use std::ops::Deref;
+use std::ops::DerefMut;
 use std::fmt::Debug;
 
 struct Arena<T> {
@@ -177,6 +178,14 @@ impl<T> Deref for ArenaPtr<T> {
     fn deref(&self) -> &T {
         unsafe {
             &(*self.entry).item
+        }
+    }
+}
+
+impl<T> DerefMut for ArenaPtr<T> {
+    fn deref_mut(&mut self) -> &mut T {
+        unsafe {
+            &mut (*self.entry).item
         }
     }
 }

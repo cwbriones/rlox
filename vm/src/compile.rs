@@ -74,8 +74,11 @@ impl<'g> Compiler<'g> {
                 self.emit_jmp_to(ip);
                 self.patch_jmp(end_jmp);
             },
-            // Stmt::Function(_) => {
-            // },
+            Stmt::Function(ref f) => {
+                // let name = f.var.name();
+                // let decl = f.declaration.borrow();
+                // let parameters = (*decl).parameters;
+            },
             Stmt::Return(ref expr) => {
                 self.compile_expr(expr);
                 self.emit(Op::Return);
@@ -178,6 +181,18 @@ impl<'g> Compiler<'g> {
                         self.emit_byte(idx);
                     },
                 }
+            },
+            Expr::Call(ref call) => {
+                self.compile_expr(&call.callee);
+                let arity = call.arguments.len();
+                for arg in call.arguments.iter() {
+                    self.compile_expr(arg);
+                }
+                if arity > 8 {
+                    panic!("Too many arguments.");
+                }
+                let op = Op::Call(arity as u8);
+                self.emit(op);
             },
             ref e => unimplemented!("{:?}", e),
         }

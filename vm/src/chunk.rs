@@ -98,8 +98,8 @@ impl Chunk {
         }
 
         // Allocate a new string.
-        let handle = gc.allocate_string(string.to_owned());
-        unsafe { gc.root(handle) };
+        // FIXME 
+        let handle = gc.allocate_string(string.to_owned(), || { [].iter().cloned() });
         self.add_constant(handle.into_value())
     }
 
@@ -169,15 +169,7 @@ pub enum Op {
     JumpIfFalse,
     Immediate,
     // Loop,
-    // Call_0,
-    // Call_1,
-    // Call_2,
-    // Call_3,
-    // Call_4,
-    // Call_5,
-    // Call_6,
-    // Call_7,
-    // Call_8,
+    Call(u8),
     // Invoke_0,
     // Invoke_1,
     // Invoke_2,
@@ -230,6 +222,8 @@ impl Op {
             Op::Nil => buf.push(0xf4),
             Op::True => buf.push(0xf5),
             Op::False => buf.push(0xf6),
+            // 0xf7 -> 0xfe
+            Op::Call(a) => buf.push(0xf7 + a),
         }
     }
 }
@@ -260,6 +254,9 @@ macro_rules! decode_op {
             0xf4 => $this.imm_nil(),
             0xf5 => $this.imm_true(),
             0xf6 => $this.imm_false(),
+            a @ 0xf7...0xfe => {
+                $this.call(a - 0xf7)
+            },
             _ => {
                 panic!("Unknown op {}", $op);
             }
