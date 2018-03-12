@@ -16,6 +16,7 @@ struct CompileState {
     locals: Vec<(String, usize)>,
     function: LoxFunction,
     scope_depth: usize,
+    breaks: Vec<usize>,
 }
 
 impl CompileState {
@@ -27,6 +28,7 @@ impl CompileState {
             locals,
             function,
             scope_depth,
+            breaks: Vec::new(),
         }
     }
 
@@ -60,6 +62,17 @@ impl CompileState {
         let last = self.scope_depth;
         self.scope_depth -= 1;
         self.locals.retain(|&(_, d)| d < last);
+    }
+
+    fn add_break(&mut self, jmp: usize) {
+        self.breaks.push(jmp);
+    }
+
+    // This shouldn't need to return the whole Vec.
+    fn breaks(&mut self) -> Vec<usize> {
+        let bs = self.breaks.clone();
+        self.breaks.clear();
+        bs
     }
 }
 
@@ -119,6 +132,11 @@ impl<'g> Compiler<'g> {
                 self.compile_stmt(body);
                 self.emit_jmp_to(ip);
                 self.patch_jmp(end_jmp);
+
+                // Patch all breaks to end at `end_jmp`
+                for b in self.state_mut().breaks() {
+                    self.patch_jmp(b);
+                }
             },
             Stmt::Function(ref f) => self.function_decl(f),
             Stmt::Return(ref expr) => {
@@ -127,8 +145,10 @@ impl<'g> Compiler<'g> {
             }
             // Stmt::Class(_) => {
             // },
-            // Stmt::Break => {
-            // },
+            Stmt::Break => {
+                let jmp = self.emit_jmp();
+                self.state_mut().add_break(jmp);
+            }
             Stmt::Var(ref var, ref init) => {
                 self.compile_expr(init);
                 match var.scope() {
