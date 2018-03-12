@@ -11,13 +11,9 @@ use parser::ast::Stmt;
 
 pub struct VM {
     // FIXME: Local variables are not currently rooted properly, we will need
-    // to scan the stack to address this at this point. If we do this...we can just
-    // ignore precise rooting of any form.
+    // to scan the stack to address this at this point.
     gc: Gc,
     globals: HashMap<String, Value>,
-
-    // TODO: Write a stack facade that hides the vector and call frames,
-    // that way we can refer to the slots into the stack safely.
 
     stack: Vec<Value>,
     frames: Vec<CallFrame>,
@@ -42,41 +38,21 @@ impl CallFrame {
     }
 
     pub fn read_byte(&mut self) -> u8 {
-        self.ip += 1;
         let ip = self.ip;
-        self.chunk().get(ip - 1)
+        self.ip += 1;
+        self.chunk().read_byte(ip)
     }
 
     pub fn read_u16(&mut self) -> u16 {
-        self.ip += 2;
         let ip = self.ip;
-        let chunk = self.chunk();
-        let lo = chunk.get(ip - 2) as u16;
-        let hi = chunk.get(ip - 1) as u16;
-        lo + (hi << 8)
+        self.ip += 2;
+        self.chunk().read_u16(ip)
     }
 
     pub fn read_u64(&mut self) -> u64 {
-        self.ip += 8;
         let ip = self.ip;
-        let chunk = self.chunk();
-
-        let b1 = chunk.get(ip - 8) as u64;
-        let b2 = chunk.get(ip - 7) as u64;
-        let b3 = chunk.get(ip - 6) as u64;
-        let b4 = chunk.get(ip - 5) as u64;
-        let b5 = chunk.get(ip - 4) as u64;
-        let b6 = chunk.get(ip - 3) as u64;
-        let b7 = chunk.get(ip - 2) as u64;
-        let b8 = chunk.get(ip - 1) as u64;
-        b1 +
-            (b2 << 8) +
-            (b3 << 16) +
-            (b4 << 24) +
-            (b5 << 32) +
-            (b6 << 40) +
-            (b7 << 48) +
-            (b8 << 56)
+        self.ip += 8;
+        self.chunk().read_u64(ip)
     }
 
     pub fn read_constant(&mut self) -> Value {
@@ -240,42 +216,20 @@ impl VM {
         panic!("SET_GLOBAL constant was not a string");
     }
 
-    fn define_global(&mut self) {
-        let val = self.frame_mut().read_constant();
-
-        if let Variant::Obj(h) = val.decode() {
-            if let Object::String(ref s) = *h {
-                let lhs = self.pop();
-                self.globals.insert(s.clone(), lhs);
-                return;
-            }
-        }
-        panic!("DEF_GLOBAL constant was not a string");
-    }
-
-    fn slots(&self) -> &[Value] {
-        let frame = self.frame();
-        &self.stack[frame.stack_start..]
-    }
-
-    fn slots_mut(&mut self) -> &mut [Value] {
-        let start = self.frame().stack_start;
-        &mut self.stack[start..]
-    }
-
     fn get_local(&mut self) {
-        let idx = self.read_byte();
-        // FIXME: When are locals ever even reserved? :(
-        let val = self.slots()[idx as usize];
+        let start = self.frame().stack_start;
+        let idx = self.read_byte() as usize;
+        let val = self.stack[start + idx];
         self.push(val);
     }
 
     fn set_local(&mut self) {
-        let idx = self.read_byte();
         // We peek because we would just push it back after
         // the assignment occurs.
         let val = self.peek();
-        self.slots_mut()[idx as usize] = val;
+        let start = self.frame().stack_start;
+        let idx = self.read_byte() as usize;
+        self.stack[start + idx] = val;
     }
 
     fn frame(&self) -> &CallFrame {
@@ -308,8 +262,6 @@ impl VM {
         let last = self.stack.len();
         let stack_start = last - (arity + 1) as usize;
         let callee = self.stack[stack_start];
-        debug!("CALL : {:?}", callee);
-        debug!("STACK: {:?}", &self.stack[stack_start..]);
 
         // ensure callee is a function
         if let Variant::Obj(obj) = callee.decode() {
@@ -339,15 +291,12 @@ impl VM {
         self.frame_mut().read_u16()
     }
 
-    // fn reset_stack(&mut self) {
-    // }
-
     fn push(&mut self, value: Value) {
         self.stack.push(value);
     }
 
     fn pop(&mut self) -> Value {
-        self.stack.pop().unwrap()
+        self.stack.pop().expect("stack to be nonempty")
     }
 
     fn peek(&mut self) -> Value {
