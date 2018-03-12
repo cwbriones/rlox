@@ -86,7 +86,27 @@ macro_rules! binary_op {
             $self.push(c.into());
             return;
         }
-        $self.runtime_error("argument not a number");
+        $self.runtime_error(RuntimeError::ArgumentNotANumber);
+    }
+}
+
+#[repr(u8)]
+#[derive(Debug, Clone, Copy)]
+pub enum RuntimeError {
+    DivideByZero,
+    ArgumentNotANumber,
+    ArgumentNotAString,
+    BadCall,
+}
+
+impl RuntimeError {
+    pub fn cause(&self) -> &'static str {
+        match *self {
+            RuntimeError::DivideByZero => "divide by zero",
+            RuntimeError::ArgumentNotANumber => "argument is not a number",
+            RuntimeError::ArgumentNotAString => "argument is not a string",
+            RuntimeError::BadCall => "value is not callable",
+        }
     }
 }
 
@@ -130,8 +150,22 @@ impl VM {
     fn add(&mut self) {
         let b = self.pop();
         let a = self.pop();
-        let c = a.as_float() + b.as_float();
-        self.push(Value::float(c));
+        match (a.decode(), b.decode()) {
+            (Variant::Float(a), Variant::Float(b)) => {
+                self.push((a + b).into());
+            }
+            (Variant::Obj(a), Variant::Obj(b)) => {
+                if let (&Object::String(ref a), &Object::String(ref b)) = (&*a, &*b) {
+                    let c = a.clone() + b;
+                    // FIXME: Gc Rooting.
+                    let val = self.gc.allocate_string(c, || { [].iter().cloned() }).into_value();
+                    self.push(val);
+                    return;
+                }
+                self.runtime_error(RuntimeError::ArgumentNotAString);
+            }
+            _ => self.runtime_error(RuntimeError::ArgumentNotANumber)
+        }
     }
 
     fn sub(&mut self) {
@@ -147,16 +181,18 @@ impl VM {
         let a = self.pop();
         if let (Variant::Float(a), Variant::Float(b)) = (a.decode(), b.decode()) {
             if b == 0.0 {
-                self.runtime_error("divide by zero");
+                self.runtime_error(RuntimeError::DivideByZero);
             }
             self.push((a/b).into());
         }
-        self.runtime_error("argument not a number")
+        self.runtime_error(RuntimeError::ArgumentNotANumber);
     }
 
     fn neg(&mut self) {
-        let a = self.pop().as_float();
-        self.push(Value::float(-a));
+        if let Variant::Float(a) = self.pop().decode() {
+            self.push((-a).into());
+        }
+        self.runtime_error(RuntimeError::ArgumentNotANumber);
     }
 
     fn not(&mut self) {
@@ -268,11 +304,12 @@ impl VM {
         let callee = self.stack[stack_start];
 
         // ensure callee is a function
-        if let Variant::Obj(obj) = callee.decode() {
-            let frame = CallFrame::new(obj, stack_start);
-            self.frames.push(frame);
-        } else {
-            self.runtime_error("Callee was not an object");
+        match callee.decode() {
+            Variant::Obj(o) if o.is_function() => {
+                let frame = CallFrame::new(o, stack_start);
+                self.frames.push(frame);
+            }
+            _ => self.runtime_error(RuntimeError::BadCall)
         }
     }
 
@@ -309,8 +346,8 @@ impl VM {
             .clone()
     }
 
-    fn runtime_error(&self, msg: &str) {
-        eprintln!("[ERROR]: {}", msg);
+    fn runtime_error(&self, err: RuntimeError) {
+        eprintln!("[ERROR]: {}", err.cause());
         for frame in self.frames.iter().rev() {
              let name = frame.chunk().name();
              eprintln!("         in {}", name);
