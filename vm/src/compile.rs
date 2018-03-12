@@ -85,7 +85,7 @@ impl<'g> Compiler<'g> {
     }
 
     pub fn compile(mut self, stmts: &[Stmt]) -> Value {
-        self.start_function("<main>", 0, 0);
+        self.start_function("<script>", 0, 0);
         for stmt in stmts {
             self.compile_stmt(stmt);
         }
@@ -158,7 +158,7 @@ impl<'g> Compiler<'g> {
                             let chunk = self.states.last_mut()
                                 .unwrap()
                                 .function
-                                .chunk();
+                                .chunk_mut();
                             chunk.string_constant(self.gc, var.name())
                         };
                         self.emit_byte(idx);
@@ -228,7 +228,7 @@ impl<'g> Compiler<'g> {
                             let chunk = self.states.last_mut()
                                 .unwrap()
                                 .function
-                                .chunk();
+                                .chunk_mut();
                             chunk.string_constant(self.gc, var.name())
                         };
                         self.emit_byte(idx);
@@ -291,7 +291,7 @@ impl<'g> Compiler<'g> {
             let chunk = self.states.last_mut()
                 .unwrap()
                 .function
-                .chunk();
+                .chunk_mut();
             chunk.string_constant(self.gc, name)
         };
         self.emit_byte(idx);
@@ -319,7 +319,7 @@ impl<'g> Compiler<'g> {
         self.state_mut().end_scope();
         let val = self.end_function();
 
-        let idx = self.chunk().add_constant(val);
+        let idx = self.chunk_mut().add_constant(val);
         self.emit(Op::Constant(idx));
         self.set_global(name);
     }
@@ -356,11 +356,18 @@ impl<'g> Compiler<'g> {
         self.states.last_mut().expect("states to be nonempty")
     }
 
-    fn chunk(&mut self) -> &mut Chunk {
-        self.states.last_mut()
+    fn chunk(&mut self) -> &Chunk {
+        self.states.last()
             .expect("states to be nonempty")
             .function
             .chunk()
+    }
+
+    fn chunk_mut(&mut self) -> &mut Chunk {
+        self.states.last_mut()
+            .expect("states to be nonempty")
+            .function
+            .chunk_mut()
     }
 
     fn line(&mut self) -> usize {
@@ -385,7 +392,7 @@ impl<'g> Compiler<'g> {
                 let b6 = ((val >> 40) & 0xff) as u8;
                 let b7 = ((val >> 48) & 0xff) as u8;
                 let b8 = ((val >> 56) & 0xff) as u8;
-                let chunk = self.chunk();
+                let chunk = self.chunk_mut();
                 chunk.write_byte(b1);
                 chunk.write_byte(b2);
                 chunk.write_byte(b3);
@@ -397,7 +404,7 @@ impl<'g> Compiler<'g> {
             }
             Literal::String(ref s) => {
                 let idx = {
-                    let chunk = self.states.last_mut().unwrap().function.chunk();
+                    let chunk = self.states.last_mut().unwrap().function.chunk_mut();
                     chunk.string_constant(self.gc, s)
                 };
                 self.emit(Op::Constant(idx));
@@ -408,12 +415,12 @@ impl<'g> Compiler<'g> {
     // FIXME: The high-level global ops should have this in their repr, or
     // we should make emit_constant handle the case without OP_CONSTANT
     fn emit_byte(&mut self, byte: u8) {
-        self.chunk().write_byte(byte);
+        self.chunk_mut().write_byte(byte);
     }
 
     fn emit_jze(&mut self) -> usize {
         let line = self.line();
-        let chunk = self.chunk();
+        let chunk = self.chunk_mut();
         chunk.write(Op::JumpIfFalse, line);
         chunk.write_byte(0xff);
         chunk.write_byte(0xff);
@@ -422,7 +429,7 @@ impl<'g> Compiler<'g> {
 
     fn emit_jmp(&mut self) -> usize {
         let line = self.line();
-        let chunk = self.chunk();
+        let chunk = self.chunk_mut();
         chunk.write(Op::Jump, line);
         chunk.write_byte(0xff);
         chunk.write_byte(0xff);
@@ -431,7 +438,7 @@ impl<'g> Compiler<'g> {
 
     fn emit_jmp_to(&mut self, ip: usize) -> usize {
         let line = self.line();
-        let chunk = self.chunk();
+        let chunk = self.chunk_mut();
         let lo = (ip & 0xff) as u8;
         let hi = ((ip >> 8) & 0xff) as u8;
         chunk.write(Op::Jump, line);
@@ -442,19 +449,19 @@ impl<'g> Compiler<'g> {
 
     // FIXME: Does not need to be mut
     fn ip(&mut self) -> usize {
-        self.chunk().len()
+        self.chunk_mut().len()
     }
 
     fn patch_jmp(&mut self, idx: usize) {
         let jmp = self.ip();
         let lo = (jmp & 0xff) as u8;
         let hi = ((jmp >> 8) & 0xff) as u8;
-        self.chunk().write_byte_at(idx, lo);
-        self.chunk().write_byte_at(idx + 1, hi);
+        self.chunk_mut().write_byte_at(idx, lo);
+        self.chunk_mut().write_byte_at(idx + 1, hi);
     }
 
     fn emit(&mut self, op: Op) {
         let line = self.line();
-        self.chunk().write(op, line);
+        self.chunk_mut().write(op, line);
     }
 }

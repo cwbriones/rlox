@@ -120,3 +120,19 @@ impl Display for Value {
         }
     }
 }
+
+impl Into<Value> for f64 {
+   fn into(self) -> Value {
+       Value::float(self)
+   }
+}
+
+impl Into<Value> for bool {
+    fn into(self) -> Value {
+        if self {
+            Value::truelit()
+        } else {
+            Value::falselit()
+        }
+    }
+}
