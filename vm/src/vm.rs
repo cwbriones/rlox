@@ -40,32 +40,53 @@ impl CallFrame {
     pub fn read_byte(&mut self) -> u8 {
         let ip = self.ip;
         self.ip += 1;
-        self.chunk().read_byte(ip)
+        self.chunk_mut().read_byte(ip)
     }
 
     pub fn read_u16(&mut self) -> u16 {
         let ip = self.ip;
         self.ip += 2;
-        self.chunk().read_u16(ip)
+        self.chunk_mut().read_u16(ip)
     }
 
     pub fn read_u64(&mut self) -> u64 {
         let ip = self.ip;
         self.ip += 8;
-        self.chunk().read_u64(ip)
+        self.chunk_mut().read_u64(ip)
     }
 
     pub fn read_constant(&mut self) -> Value {
         let idx = self.read_byte();
-        *self.chunk().get_constant(idx).unwrap()
+        *self.chunk_mut().get_constant(idx).unwrap()
     }
 
-    pub fn chunk(&mut self) -> &mut Chunk {
-        if let Object::LoxFunction(ref mut f) = *self.function {
+    pub fn chunk(&self) -> &Chunk {
+        if let Object::LoxFunction(ref f) = *self.function {
             f.chunk()
         } else {
             unreachable!();
         }
+    }
+
+    pub fn chunk_mut(&mut self) -> &mut Chunk {
+        if let Object::LoxFunction(ref mut f) = *self.function {
+            f.chunk_mut()
+        } else {
+            unreachable!();
+        }
+    }
+}
+
+macro_rules! binary_op {
+    ($self:ident, $op:tt) => {
+        let b = $self.pop();
+        let a = $self.pop();
+        if let (Variant::Float(a), Variant::Float(b)) = (a.decode(), b.decode()) {
+            let c = a $op b;
+            $self.push(c.into());
+            return;
+        }
+        $self.runtime_error("argument not a number");
     }
 }
 
@@ -97,7 +118,7 @@ impl VM {
     }
 
     fn constant(&mut self, idx: u8) {
-        let val = *self.frame_mut().chunk().get_constant(idx).unwrap();
+        let val = *self.frame_mut().chunk_mut().get_constant(idx).unwrap();
         self.push(val);
     }
 
@@ -114,24 +135,23 @@ impl VM {
     }
 
     fn sub(&mut self) {
-        let b = self.pop();
-        let a = self.pop();
-        let c = a.as_float() - b.as_float();
-        self.push(Value::float(c));
+        binary_op!(self, -);
     }
 
     fn mul(&mut self) {
-        let b = self.pop();
-        let a = self.pop();
-        let c = a.as_float() * b.as_float();
-        self.push(Value::float(c));
+        binary_op!(self, *);
     }
 
     fn div(&mut self) {
         let b = self.pop();
         let a = self.pop();
-        let c = a.as_float() / b.as_float();
-        self.push(Value::float(c));
+        if let (Variant::Float(a), Variant::Float(b)) = (a.decode(), b.decode()) {
+            if b == 0.0 {
+                self.runtime_error("divide by zero");
+            }
+            self.push((a/b).into());
+        }
+        self.runtime_error("argument not a number")
     }
 
     fn neg(&mut self) {
@@ -149,33 +169,17 @@ impl VM {
     }
 
     fn eq(&mut self) {
-        let b = self.pop();
         let a = self.pop();
-        if a == b {
-            self.push(Value::truelit());
-        } else {
-            self.push(Value::falselit());
-        }
+        let b = self.pop();
+        self.push((a == b).into());
     }
 
     fn gt(&mut self) {
-        let b = self.pop().as_float();
-        let a = self.pop().as_float();
-        if a > b {
-            self.push(Value::truelit());
-        } else {
-            self.push(Value::falselit());
-        }
+        binary_op!(self, >);
     }
 
     fn lt(&mut self) {
-        let b = self.pop().as_float();
-        let a = self.pop().as_float();
-        if a < b {
-            self.push(Value::truelit());
-        } else {
-            self.push(Value::falselit());
-        }
+        binary_op!(self, <);
     }
 
     fn jmp(&mut self) {
@@ -268,18 +272,18 @@ impl VM {
             let frame = CallFrame::new(obj, stack_start);
             self.frames.push(frame);
         } else {
-            panic!("Callee was not an object");
+            self.runtime_error("Callee was not an object");
         }
     }
 
     fn ret(&mut self) {
         if let Some(frame) = self.frames.pop() {
             let val = self.pop(); // return value
+            // Remove all arguments off the stack
             self.stack.truncate(frame.stack_start);
             self.push(val);
             return;
         }
-        // Remove all arguments off the stack
         panic!("Cannot return from top-level.");
     }
 
@@ -303,6 +307,15 @@ impl VM {
         self.stack.last()
             .expect("stack to be nonempty")
             .clone()
+    }
+
+    fn runtime_error(&self, msg: &str) {
+        eprintln!("[ERROR]: {}", msg);
+        for frame in self.frames.iter().rev() {
+             let name = frame.chunk().name();
+             eprintln!("         in {}", name);
+        }
+        ::std::process::exit(1);
     }
 }
 

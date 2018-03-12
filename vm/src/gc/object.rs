@@ -29,8 +29,8 @@ impl LoxFunction {
         &self.name
     }
 
-    pub fn chunk(&mut self) -> &mut Chunk {
-        &mut self.chunk
+    pub fn chunk(&self) -> &Chunk {
+        &self.chunk
     }
 
     pub fn chunk_mut(&mut self) -> &mut Chunk {
