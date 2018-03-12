@@ -29,6 +29,38 @@ impl CompileState {
             scope_depth,
         }
     }
+
+    fn resolve_local(&mut self, var: &str, depth: usize) -> u8 {
+        // Find the local variable with this depth
+        let depth = self.scope_depth - depth;
+
+        for (i, &(ref v, d)) in self.locals.iter().enumerate() {
+            if v == var && d == depth {
+                return i as u8;
+            }
+        }
+        if self.locals.len() == ::std::u8::MAX as usize {
+            panic!("TOO MANY LOCAL VARIABLES");
+        }
+        self.locals.push((var.into(), depth));
+
+        debug!("RESOLVE LOCAL: {} @ {}", var, depth);
+        debug!("CURRENT      : {:?}", self.locals);
+
+        (self.locals.len() - 1) as u8
+    }
+
+    fn begin_scope(&mut self) {
+        self.scope_depth += 1;
+    }
+
+    fn end_scope(&mut self) {
+        // We do not need to emit pops because the vm will clear the stack when
+        // the last callframe is discarded.
+        let last = self.scope_depth;
+        self.scope_depth -= 1;
+        self.locals.retain(|&(_, d)| d < last);
+    }
 }
 
 impl<'g> Compiler<'g> {
@@ -58,11 +90,11 @@ impl<'g> Compiler<'g> {
                 self.emit(Op::Pop); // expression is unused
             },
             Stmt::Block(ref stmts) => {
-                *self.scope_depth() += 1;
+                self.state_mut().begin_scope();
                 for s in stmts {
                     self.compile_stmt(s);
                 }
-                self.end_scope();
+                self.state_mut().end_scope();
             },
             Stmt::If(ref cond, ref then_clause, ref else_clause) => {
                 self.compile_expr(cond);
@@ -112,7 +144,7 @@ impl<'g> Compiler<'g> {
                         self.emit_byte(idx);
                     },
                     Scope::Local(d) => {
-                        let idx = self.resolve_local(var.name(), d);
+                        let idx = self.state_mut().resolve_local(var.name(), d);
                         self.emit(Op::SetLocal);
                         self.emit_byte(idx);
                     },
@@ -182,7 +214,7 @@ impl<'g> Compiler<'g> {
                         self.emit_byte(idx);
                     },
                     Scope::Local(d) => {
-                        let idx = self.resolve_local(var.name(), d);
+                        let idx = self.state_mut().resolve_local(var.name(), d);
                         self.emit(Op::GetLocal);
                         self.emit_byte(idx);
                     },
@@ -193,7 +225,7 @@ impl<'g> Compiler<'g> {
                 match var.scope() {
                     Scope::Global => self.set_global(var.name()),
                     Scope::Local(d) => {
-                        let idx = self.resolve_local(var.name(), d);
+                        let idx = self.state_mut().resolve_local(var.name(), d);
                         self.emit(Op::SetLocal);
                         self.emit_byte(idx);
                     },
@@ -258,30 +290,18 @@ impl<'g> Compiler<'g> {
         // Now that we've pushed to states we are in a new scope.
 
         for p in parameters {
-            self.resolve_local(p.name(), 0);
+            self.state_mut().resolve_local(p.name(), 0);
         }
         for stmt in body {
             self.compile_stmt(stmt);
         }
 
-        self.end_scope();
+        self.state_mut().end_scope();
         let val = self.end_function();
+
         let idx = self.chunk().add_constant(val);
         self.emit(Op::Constant(idx));
         self.set_global(name);
-    }
-
-    fn end_scope(&mut self) {
-        let scope_depth = *self.scope_depth();
-        self.locals().retain(|&(_, d)| {
-            d != scope_depth
-        });
-        // We do not pop because the vm will clear the stack when
-        // the last callframe is discarded.
-        // for _ in 0..scope_count {
-        //     self.emit(Op::Pop);
-        // }
-        *self.scope_depth() -= 1;
     }
 
     fn start_function(&mut self, name: &str, arity: u8, scope: usize) {
@@ -312,47 +332,15 @@ impl<'g> Compiler<'g> {
         dis.disassemble();
     }
 
-    fn resolve_local(&mut self, var: &str, depth: usize) -> u8 {
-        // Find the local variable with this depth
-        let scope_depth = *self.scope_depth();
-        let depth = scope_depth - depth;
-        let locals = self.locals();
-
-        for (i, &(ref v, d)) in locals.iter().enumerate() {
-            if v == var && d == depth {
-                return i as u8;
-            }
-        }
-        if locals.len() == ::std::u8::MAX as usize {
-            panic!("TOO MANY LOCAL VARIABLES");
-        }
-        locals.push((var.into(), depth));
-
-        debug!("RESOLVE LOCAL: {} @ {}", var, depth);
-        debug!("CURRENT      : {:?}", locals);
-
-        (locals.len() - 1) as u8
+    fn state_mut(&mut self) -> &mut CompileState {
+        self.states.last_mut().expect("states to be nonempty")
     }
-
-    // TODO: Maybe we can just have "state" and infer all other methods?
 
     fn chunk(&mut self) -> &mut Chunk {
         self.states.last_mut()
             .expect("states to be nonempty")
             .function
             .chunk()
-    }
-
-    fn locals(&mut self) -> &mut Vec<(String, usize)> {
-        &mut self.states.last_mut()
-            .expect("states to be nonempty")
-            .locals
-    }
-
-    fn scope_depth(&mut self) -> &mut usize {
-        &mut self.states.last_mut()
-            .expect("states to be nonempty")
-            .scope_depth
     }
 
     fn line(&mut self) -> usize {
