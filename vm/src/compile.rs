@@ -2,35 +2,49 @@ use chunk::{Chunk, Op};
 
 use gc::Gc;
 use gc::value::Value;
+use gc::object::{Object, LoxFunction};
 
 use parser::ast::*;
 
 pub struct Compiler<'g> {
-    chunk: Chunk,
-    line: usize,
     gc: &'g mut Gc,
+    states: Vec<CompileState>,
+}
+
+struct CompileState {
+    line: usize,
     locals: Vec<(String, usize)>,
+    function: LoxFunction,
     scope_depth: usize,
+}
+
+impl CompileState {
+    fn new(function: LoxFunction, scope_depth: usize) -> Self {
+        // Reserve the first local
+        let locals = vec![("".into(), 1)];
+        CompileState {
+            line: 1,
+            locals,
+            function,
+            scope_depth,
+        }
+    }
 }
 
 impl<'g> Compiler<'g> {
     pub fn new(gc: &'g mut Gc) -> Self {
         Compiler {
-            chunk: Chunk::new("<unnamed chunk>".into()),
-            line: 1,
             gc,
-            locals: Vec::new(),
-            scope_depth: 0,
+            states: Vec::new(),
         }
     }
 
-    pub fn compile(mut self, name: &str, stmts: &[Stmt]) -> Chunk {
-        // Singleton values are always the first 3 constants in a chunk.
-        self.chunk.set_name(name);
+    pub fn compile(mut self, stmts: &[Stmt]) -> Value {
+        self.start_function("<main>", 0, 0);
         for stmt in stmts {
             self.compile_stmt(stmt);
         }
-        self.chunk
+        self.end_function()
     }
 
     fn compile_stmt(&mut self, stmt: &Stmt) {
@@ -44,11 +58,11 @@ impl<'g> Compiler<'g> {
                 self.emit(Op::Pop); // expression is unused
             },
             Stmt::Block(ref stmts) => {
-                self.scope_depth += 1;
+                *self.scope_depth() += 1;
                 for s in stmts {
                     self.compile_stmt(s);
                 }
-                self.scope_depth -= 1;
+                self.end_scope();
             },
             Stmt::If(ref cond, ref then_clause, ref else_clause) => {
                 self.compile_expr(cond);
@@ -74,11 +88,7 @@ impl<'g> Compiler<'g> {
                 self.emit_jmp_to(ip);
                 self.patch_jmp(end_jmp);
             },
-            Stmt::Function(ref f) => {
-                // let name = f.var.name();
-                // let decl = f.declaration.borrow();
-                // let parameters = (*decl).parameters;
-            },
+            Stmt::Function(ref f) => self.function_decl(f),
             Stmt::Return(ref expr) => {
                 self.compile_expr(expr);
                 self.emit(Op::Return);
@@ -92,7 +102,13 @@ impl<'g> Compiler<'g> {
                 match var.scope() {
                     Scope::Global => {
                         self.emit(Op::SetGlobal);
-                        let idx = self.chunk.string_constant(self.gc, var.name());
+                        let idx = {
+                            let chunk = self.states.last_mut()
+                                .unwrap()
+                                .function
+                                .chunk();
+                            chunk.string_constant(self.gc, var.name())
+                        };
                         self.emit_byte(idx);
                     },
                     Scope::Local(d) => {
@@ -156,7 +172,13 @@ impl<'g> Compiler<'g> {
                 match var.scope() {
                     Scope::Global => {
                         self.emit(Op::GetGlobal);
-                        let idx = self.chunk.string_constant(self.gc, var.name());
+                        let idx = {
+                            let chunk = self.states.last_mut()
+                                .unwrap()
+                                .function
+                                .chunk();
+                            chunk.string_constant(self.gc, var.name())
+                        };
                         self.emit_byte(idx);
                     },
                     Scope::Local(d) => {
@@ -169,12 +191,7 @@ impl<'g> Compiler<'g> {
             Expr::Assign(ref var, ref expr) => {
                 self.compile_expr(expr);
                 match var.scope() {
-                    Scope::Global => {
-                        self.emit(Op::SetGlobal);
-                        // This constant should already exist, search the table.
-                        let idx = self.chunk.string_constant(self.gc, var.name());
-                        self.emit_byte(idx);
-                    },
+                    Scope::Global => self.set_global(var.name()),
                     Scope::Local(d) => {
                         let idx = self.resolve_local(var.name(), d);
                         self.emit(Op::SetLocal);
@@ -216,21 +233,132 @@ impl<'g> Compiler<'g> {
         self.patch_jmp(end_jmp);
     }
 
+    fn set_global(&mut self, name: &str) {
+        self.emit(Op::SetGlobal);
+        let idx = {
+            let chunk = self.states.last_mut()
+                .unwrap()
+                .function
+                .chunk();
+            chunk.string_constant(self.gc, name)
+        };
+        self.emit_byte(idx);
+    }
+
+    fn function_decl(&mut self, f: &FunctionStmt) {
+        let name = f.var.name();
+        let decl = f.declaration.borrow();
+
+        let parameters = &decl.parameters;
+        let body = &decl.body;
+        let arity = parameters.len() as u8;
+
+        self.start_function(name, arity, 1);
+
+        // Now that we've pushed to states we are in a new scope.
+
+        for p in parameters {
+            self.resolve_local(p.name(), 0);
+        }
+        for stmt in body {
+            self.compile_stmt(stmt);
+        }
+
+        self.end_scope();
+        let val = self.end_function();
+        let idx = self.chunk().add_constant(val);
+        self.emit(Op::Constant(idx));
+        self.set_global(name);
+    }
+
+    fn end_scope(&mut self) {
+        let scope_depth = *self.scope_depth();
+        self.locals().retain(|&(_, d)| {
+            d != scope_depth
+        });
+        // We do not pop because the vm will clear the stack when
+        // the last callframe is discarded.
+        // for _ in 0..scope_count {
+        //     self.emit(Op::Pop);
+        // }
+        *self.scope_depth() -= 1;
+    }
+
+    fn start_function(&mut self, name: &str, arity: u8, scope: usize) {
+        let next_function = LoxFunction::new(name, arity);
+        let state = CompileState::new(next_function, scope);
+        self.states.push(state);
+    }
+
+    fn end_function(&mut self) -> Value {
+        self.emit(Op::Nil);
+        self.emit(Op::Return);
+        let mut state = self.states.pop().expect("states to be nonempty");
+        #[cfg(debug_assertions)]
+        {
+            self.dissassemble(state.function.chunk());
+        }
+        let function = Object::LoxFunction(state.function);
+        self.gc.allocate(function, || {
+            // FIXME: self Cannot be borrowed because GC is also borrowed
+            [].iter().cloned()
+        }).into_value()
+    }
+
+    fn dissassemble(&self, chunk: &Chunk) {
+        use debug::Disassembler;
+
+        let dis = Disassembler::new(chunk);
+        dis.disassemble();
+    }
+
     fn resolve_local(&mut self, var: &str, depth: usize) -> u8 {
         // Find the local variable with this depth
-        let depth = self.scope_depth - depth;
+        let scope_depth = *self.scope_depth();
+        let depth = scope_depth - depth;
+        let locals = self.locals();
 
-        for (i, &(ref v, d)) in self.locals.iter().enumerate() {
+        for (i, &(ref v, d)) in locals.iter().enumerate() {
             if v == var && d == depth {
                 return i as u8;
             }
         }
-        if self.locals.len() == ::std::u8::MAX as usize {
+        if locals.len() == ::std::u8::MAX as usize {
             panic!("TOO MANY LOCAL VARIABLES");
         }
-        self.locals.push((var.into(), depth));
+        locals.push((var.into(), depth));
 
-        (self.locals.len() - 1) as u8
+        debug!("RESOLVE LOCAL: {} @ {}", var, depth);
+        debug!("CURRENT      : {:?}", locals);
+
+        (locals.len() - 1) as u8
+    }
+
+    // TODO: Maybe we can just have "state" and infer all other methods?
+
+    fn chunk(&mut self) -> &mut Chunk {
+        self.states.last_mut()
+            .expect("states to be nonempty")
+            .function
+            .chunk()
+    }
+
+    fn locals(&mut self) -> &mut Vec<(String, usize)> {
+        &mut self.states.last_mut()
+            .expect("states to be nonempty")
+            .locals
+    }
+
+    fn scope_depth(&mut self) -> &mut usize {
+        &mut self.states.last_mut()
+            .expect("states to be nonempty")
+            .scope_depth
+    }
+
+    fn line(&mut self) -> usize {
+        self.states.last_mut()
+            .expect("states to be nonempty")
+            .line
     }
 
     fn emit_constant(&mut self, lit: &Literal) {
@@ -249,17 +377,21 @@ impl<'g> Compiler<'g> {
                 let b6 = ((val >> 40) & 0xff) as u8;
                 let b7 = ((val >> 48) & 0xff) as u8;
                 let b8 = ((val >> 56) & 0xff) as u8;
-                self.chunk.write_byte(b1);
-                self.chunk.write_byte(b2);
-                self.chunk.write_byte(b3);
-                self.chunk.write_byte(b4);
-                self.chunk.write_byte(b5);
-                self.chunk.write_byte(b6);
-                self.chunk.write_byte(b7);
-                self.chunk.write_byte(b8);
+                let chunk = self.chunk();
+                chunk.write_byte(b1);
+                chunk.write_byte(b2);
+                chunk.write_byte(b3);
+                chunk.write_byte(b4);
+                chunk.write_byte(b5);
+                chunk.write_byte(b6);
+                chunk.write_byte(b7);
+                chunk.write_byte(b8);
             }
             Literal::String(ref s) => {
-                let idx = self.chunk.string_constant(self.gc, s);
+                let idx = {
+                    let chunk = self.states.last_mut().unwrap().function.chunk();
+                    chunk.string_constant(self.gc, s)
+                };
                 self.emit(Op::Constant(idx));
             }
         }
@@ -268,45 +400,53 @@ impl<'g> Compiler<'g> {
     // FIXME: The high-level global ops should have this in their repr, or
     // we should make emit_constant handle the case without OP_CONSTANT
     fn emit_byte(&mut self, byte: u8) {
-        self.chunk.write_byte(byte);
+        self.chunk().write_byte(byte);
     }
 
     fn emit_jze(&mut self) -> usize {
-        self.chunk.write(Op::JumpIfFalse, self.line);
-        self.chunk.write_byte(0xff);
-        self.chunk.write_byte(0xff);
-        self.chunk.len() - 2
+        let line = self.line();
+        let chunk = self.chunk();
+        chunk.write(Op::JumpIfFalse, line);
+        chunk.write_byte(0xff);
+        chunk.write_byte(0xff);
+        chunk.len() - 2
     }
 
     fn emit_jmp(&mut self) -> usize {
-        self.chunk.write(Op::Jump, self.line);
-        self.chunk.write_byte(0xff);
-        self.chunk.write_byte(0xff);
-        self.chunk.len() - 2
+        let line = self.line();
+        let chunk = self.chunk();
+        chunk.write(Op::Jump, line);
+        chunk.write_byte(0xff);
+        chunk.write_byte(0xff);
+        chunk.len() - 2
     }
 
     fn emit_jmp_to(&mut self, ip: usize) -> usize {
+        let line = self.line();
+        let chunk = self.chunk();
         let lo = (ip & 0xff) as u8;
         let hi = ((ip >> 8) & 0xff) as u8;
-        self.chunk.write(Op::Jump, self.line);
-        self.chunk.write_byte(lo);
-        self.chunk.write_byte(hi);
-        self.chunk.len() - 2
+        chunk.write(Op::Jump, line);
+        chunk.write_byte(lo);
+        chunk.write_byte(hi);
+        chunk.len() - 2
     }
 
-    fn ip(&self) -> usize {
-        self.chunk.len()
+    // FIXME: Does not need to be mut
+    fn ip(&mut self) -> usize {
+        self.chunk().len()
     }
 
     fn patch_jmp(&mut self, idx: usize) {
         let jmp = self.ip();
         let lo = (jmp & 0xff) as u8;
         let hi = ((jmp >> 8) & 0xff) as u8;
-        self.chunk.write_byte_at(idx, lo);
-        self.chunk.write_byte_at(idx + 1, hi);
+        self.chunk().write_byte_at(idx, lo);
+        self.chunk().write_byte_at(idx + 1, hi);
     }
 
     fn emit(&mut self, op: Op) {
-        self.chunk.write(op, self.line);
+        let line = self.line();
+        self.chunk().write(op, line);
     }
 }

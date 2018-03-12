@@ -2,12 +2,14 @@ use std::env;
 use std::io::prelude::*;
 use std::fs::File;
 
-use failure::err_msg;
-
-use compile::Compiler;
+use parser::ast::Stmt;
 
 extern crate parser;
 extern crate failure;
+extern crate env_logger;
+
+#[macro_use]
+extern crate log;
 
 #[macro_use]
 mod chunk;
@@ -17,13 +19,15 @@ mod vm;
 mod gc;
 
 fn main() {
+    env_logger::init();
+
     let mut args = env::args();
     let _app = args.next();
 
     if let Some(arg) = args.next() {
         let res = match &arg[..] {
             "help" => help(args),
-            "debug" => debug(args),
+    //         "debug" => debug(args),
             sourcefile => execute(sourcefile),
         };
         if let Err(err) = res {
@@ -51,33 +55,33 @@ fn help(_args: env::Args) -> Result<(), failure::Error> {
     println!("       rlox debug - Show the compiled bytecode for a script, without executing.");
     Ok(())
 }
-
-fn debug(mut args: env::Args) -> Result<(), failure::Error> {
-    let filename = match args.next() {
-        Some(filename) => filename,
-        None => return Err(err_msg("missing file")),
-    };
-    let mut gc = gc::Gc::new();
-    let chunk = compile(&filename, &mut gc)?;
-    let disassembler = debug::Disassembler::new(&chunk);
-    disassembler.disassemble();
-    Ok(())
-}
+//
+// fn debug(mut args: env::Args) -> Result<(), failure::Error> {
+//     let filename = match args.next() {
+//         Some(filename) => filename,
+//         None => return Err(err_msg("missing file")),
+//     };
+//     let mut gc = gc::Gc::new();
+//     let chunk = compile(&filename, &mut gc)?;
+//     let disassembler = debug::Disassembler::new(&chunk);
+//     disassembler.disassemble();
+//     Ok(())
+// }
 
 fn execute(filename: &str) -> Result<(), failure::Error> {
-    let mut gc = gc::Gc::new();
-    let chunk = compile(&filename, &mut gc)?;
-    vm::VM::new(chunk, gc).run();
+    let gc = gc::Gc::new();
+    let stmts = parse(&filename)?;
+    vm::VM::new(gc).interpret(&stmts);
     Ok(())
 }
 
-fn compile(filename: &str, gc: &mut gc::Gc) -> Result<chunk::Chunk, failure::Error> {
+fn parse(filename: &str) -> Result<Vec<Stmt>, failure::Error> {
     let mut file = File::open(filename)?;
     let mut contents = String::new();
     file.read_to_string(&mut contents)?;
     let mut stmts = report_and_bail!(parser::parse(&contents));
     report_and_bail!(parser::resolve(&mut stmts));
-    Ok(Compiler::new(gc).compile(filename, &stmts))
+    Ok(stmts)
 }
 
 fn show_errors<E: failure::Fail>(errors: Vec<E>) -> ! {
