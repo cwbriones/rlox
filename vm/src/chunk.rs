@@ -59,11 +59,6 @@ impl Chunk {
         self.lines[idx].line
     }
 
-    pub fn set_name(&mut self, name: &str) {
-        self.name.clear();
-        self.name.push_str(name);
-    }
-
     pub fn name(&self) -> &str {
         &self.name
     }
@@ -98,7 +93,7 @@ impl Chunk {
         }
 
         // Allocate a new string.
-        // FIXME 
+        // FIXME
         let handle = gc.allocate_string(string.to_owned(), || { [].iter().cloned() });
         self.add_constant(handle.into_value())
     }

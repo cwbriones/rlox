@@ -1,11 +1,13 @@
 use std::collections::HashMap;
 
 use chunk::Chunk;
+use compile::Compiler;
 use gc::Gc;
 use gc::object::Object;
 use gc::object::ObjectHandle;
 use gc::value::Value;
 use gc::value::Variant;
+use parser::ast::Stmt;
 
 pub struct VM {
     // FIXME: Local variables are not currently rooted properly, we will need
@@ -92,29 +94,27 @@ impl CallFrame {
 }
 
 impl VM {
-    pub fn new(chunk: Chunk, mut gc: Gc) -> Self {
-        let obj = Object::function("main", 0, chunk);
-        let roots_fn = || {
-            // FIXME: This shouldn't be in new anyway because the allocations should happen in the
-            // compiler.
-            [].into_iter().cloned()
-        };
-
-        let function = gc.allocate(obj, roots_fn);
-
-        let frame = CallFrame::new(function, 0);
-        let frames = vec![frame];
+    pub fn new(gc: Gc) -> Self {
         VM {
             stack: Vec::new(),
             gc,
             globals: HashMap::new(),
-            frames,
+            frames: Vec::new(),
         }
     }
 
-    pub fn run(mut self) {
-        let l = self.frame_mut().chunk().len();
-        while self.frame().ip < l {
+    pub fn interpret(&mut self, stmts: &[Stmt]) {
+        let function = {
+            let compiler = Compiler::new(&mut self.gc);
+            compiler.compile(stmts)
+        };
+        self.push(function);
+        self.call(0);
+        self.run();
+    }
+
+    fn run(&mut self) {
+        while !self.frames.is_empty() {
             let inst = self.read_byte();
             decode_op!(inst, self);
         }
@@ -305,9 +305,11 @@ impl VM {
     }
 
     fn call(&mut self, arity: u8) {
-        let last = self.stack.len() - 1;
+        let last = self.stack.len();
         let stack_start = last - (arity + 1) as usize;
         let callee = self.stack[stack_start];
+        debug!("CALL : {:?}", callee);
+        debug!("STACK: {:?}", &self.stack[stack_start..]);
 
         // ensure callee is a function
         if let Variant::Obj(obj) = callee.decode() {
@@ -320,7 +322,10 @@ impl VM {
 
     fn ret(&mut self) {
         if let Some(frame) = self.frames.pop() {
+            let val = self.pop(); // return value
             self.stack.truncate(frame.stack_start);
+            self.push(val);
+            return;
         }
         // Remove all arguments off the stack
         panic!("Cannot return from top-level.");

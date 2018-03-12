@@ -19,6 +19,12 @@ pub struct LoxFunction {
 }
 
 impl LoxFunction {
+    pub fn new(name: &str, arity: u8) -> Self {
+        let name: String = name.into();
+        let chunk = Chunk::new(name.clone());
+        LoxFunction { name, arity, chunk }
+    }
+
     pub fn name(&self) -> &str {
         &self.name
     }
@@ -26,18 +32,15 @@ impl LoxFunction {
     pub fn chunk(&mut self) -> &mut Chunk {
         &mut self.chunk
     }
+
+    pub fn chunk_mut(&mut self) -> &mut Chunk {
+        &mut self.chunk
+    }
 }
 
 impl Object {
     pub fn string(string: String) -> Self {
         Object::String(string)
-    }
-
-    pub fn function(name: &str, arity: u8, chunk: Chunk) -> Self {
-        let name = name.into();
-        Object::LoxFunction(
-            LoxFunction { name, arity, chunk }
-        )
     }
 
     pub fn is_function(&self) -> bool {
