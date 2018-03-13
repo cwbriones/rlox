@@ -105,7 +105,13 @@ impl Value {
 
 impl Debug for Value {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-        write!(f, "{:?}", self.decode())
+        match self.decode() {
+            Variant::Nil => write!(f, "nil"),
+            Variant::False => write!(f, "false"),
+            Variant::True => write!(f, "true"),
+            Variant::Float(n) => write!(f, "{:?}", n),
+            Variant::Obj(o) => write!(f, "{:?}", o),
+        }
     }
 }
 
