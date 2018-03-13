@@ -19,12 +19,10 @@ impl<'c> Disassembler<'c> {
     pub fn disassemble(mut self) {
         let bytes = self.chunk.as_ref();
         println!("== {} ==", self.chunk.name());
-        println!("CONSTANTS");
         for (i, c) in self.chunk.constants().enumerate() {
-            println!("{} {}", i, c);
+            println!("{:3} {}", i, c);
         }
         println!("=========");
-        println!("IP   LINE");
         while self.offset < bytes.len() {
             self.disassemble_instruction();
         }
@@ -37,7 +35,7 @@ impl<'c> Disassembler<'c> {
             print!("   | ");
         } else {
             self.line = line;
-            print!("{:04} ", line);
+            print!("{:4} ", line);
         }
         let inst = self.read_byte();
         decode_op!(inst, self);
@@ -45,7 +43,7 @@ impl<'c> Disassembler<'c> {
 
     fn constant(&mut self, idx: u8) {
         let val = self.chunk.get_constant(idx).expect("invalid constant segment index");
-        println!("OP_CONSTANT {:?}", val);
+        println!("OP_CONSTANT\t{}\t{:?}", idx, val);
     }
 
     fn ret(&self) { println!("OP_RETURN"); }
@@ -62,37 +60,39 @@ impl<'c> Disassembler<'c> {
     fn pop(&self) { println!("OP_POP"); }
 
     fn jmp(&mut self) {
+        let offset = self.offset - 1;
         let ip = self.read_u16();
-        println!("OP_JMP {}", ip);
+        println!("OP_JMP\t{} -> {}", offset, ip);
     }
 
     fn jze(&mut self) {
+        let offset = self.offset - 1;
         let ip = self.read_u16();
-        println!("OP_JZE {}", ip);
+        println!("OP_JZE\t{} -> {}", offset, ip);
     }
 
     fn get_global(&mut self) {
         let val = self.read_constant();
-        println!("GET_GLOBAL {:?}", val);
+        println!("OP_GET_GLOBAL\t{:?}", val);
     }
 
     fn set_global(&mut self) {
         let val = self.read_constant();
-        println!("SET_GLOBAL {:?}", val);
+        println!("OP_SET_GLOBAL\t{:?}", val);
     }
 
     fn define_global(&self) {
-        println!("DEFINE_GLOBAL");
+        println!("OP_DEFINE_GLOBAL");
     }
 
     fn get_local(&mut self) {
         let val = self.read_byte();
-        println!("GET_LOCAL({})", val);
+        println!("OP_GET_LOCAL\t{}", val);
     }
 
     fn set_local(&mut self) {
         let val = self.read_byte();
-        println!("SET_LOCAL({})", val);
+        println!("OP_SET_LOCAL\t{}", val);
     }
 
     fn immediate(&mut self) {
@@ -105,32 +105,32 @@ impl<'c> Disassembler<'c> {
         let b6 = self.chunk.get(self.offset - 3) as u64;
         let b7 = self.chunk.get(self.offset - 2) as u64;
         let b8 = self.chunk.get(self.offset - 1) as u64;
-        let raw = b1 + 
-            (b2 << 8) + 
-            (b3 << 16) + 
+        let raw = b1 +
+            (b2 << 8) +
+            (b3 << 16) +
             (b4 << 24) +
             (b5 << 32) +
             (b6 << 40) +
             (b7 << 48) +
             (b8 << 56);
         let val = unsafe { Value::from_raw(raw) };
-        println!("IMM_FLOAT {}", val);
+        println!("OP_FLOAT\t{}", val);
     }
 
     fn imm_nil(&self) {
-        println!("IMM_NIL");
+        println!("OP_NIL");
     }
 
     fn imm_true(&self) {
-        println!("IMM_TRUE");
+        println!("OP_TRUE");
     }
 
     fn imm_false(&self) {
-        println!("IMM_FALSE");
+        println!("OP_FALSE");
     }
 
     fn call(&self, arity: u8) {
-        println!("CALL_{}", arity);
+        println!("OP_CALL_{}", arity);
     }
 
     fn read_byte(&mut self) -> u8 {

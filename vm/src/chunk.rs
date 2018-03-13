@@ -41,7 +41,7 @@ impl Chunk {
 
     fn add_line(&mut self, line: usize) {
         match self.lines.last().cloned() {
-            Some(last) if last.line == line => return,
+            Some(last) if last.line >= line => return,
             _ => (),
         }
         self.lines.push(LineInfo {

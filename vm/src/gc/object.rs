@@ -55,7 +55,7 @@ impl Object {
 impl Debug for Object {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
         match *self {
-            Object::String(ref s) => write!(f, "<string: {:?}>", s),
+            Object::String(ref s) => write!(f, "{:?}", s),
             Object::LoxFunction(ref fun) => write!(f, "<function: {:?}>", fun.name),
         }
     }
