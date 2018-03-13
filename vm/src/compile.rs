@@ -134,7 +134,7 @@ impl<'g> Compiler<'g> {
                 let end_jmp = self.emit_jze();
                 self.emit(Op::Pop); // condition
                 self.compile_stmt(body);
-                self.emit_jmp_to(ip);
+                self.emit_loop(ip);
                 self.patch_jmp(end_jmp);
                 self.emit(Op::Pop); // condition
 
@@ -445,15 +445,16 @@ impl<'g> Compiler<'g> {
         chunk.len() - 2
     }
 
-    fn emit_jmp_to(&mut self, ip: usize) -> usize {
+    fn emit_loop(&mut self, ip: usize) {
         let line = self.line();
         let chunk = self.chunk_mut();
-        let lo = (ip & 0xff) as u8;
-        let hi = ((ip >> 8) & 0xff) as u8;
-        chunk.write(Op::Jump, line);
+        let sub = chunk.len() - ip + 3; // 3 bytes for the instruction itself
+
+        let lo = (sub & 0xff) as u8;
+        let hi = ((sub >> 8) & 0xff) as u8;
+        chunk.write(Op::Loop, line);
         chunk.write_byte(lo);
         chunk.write_byte(hi);
-        chunk.len() - 2
     }
 
     // FIXME: Does not need to be mut

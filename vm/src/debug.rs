@@ -71,6 +71,11 @@ impl<'c> Disassembler<'c> {
         println!("OP_JZE\t{} -> {}", offset, ip);
     }
 
+    fn op_loop(&mut self) {
+        let sub = self.read_u16() as usize;
+        println!("OP_LOOP\t{} -> {}", self.offset, self.offset - sub);
+    }
+
     fn get_global(&mut self) {
         let val = self.read_constant();
         println!("OP_GET_GLOBAL\t{:?}", val);
