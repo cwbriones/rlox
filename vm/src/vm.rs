@@ -229,6 +229,10 @@ impl VM {
         }
     }
 
+    fn op_loop(&mut self) {
+        self.frame_mut().ip -= self.read_u16() as usize;
+    }
+
     fn get_global(&mut self) {
         let val = self.frame_mut().read_constant();
 

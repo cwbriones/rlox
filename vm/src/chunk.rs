@@ -190,6 +190,7 @@ pub enum Op {
     Print,
     Jump,
     JumpIfFalse,
+    Loop,
     Immediate,
     // Loop,
     Call(u8),
@@ -236,6 +237,7 @@ impl Op {
             Op::LessThan => buf.push(0x0b),
             Op::Jump => buf.push(0x0c),
             Op::JumpIfFalse => buf.push(0x0d),
+            Op::Loop => buf.push(0xff),
             Op::Pop => buf.push(0x0e),
             Op::GetGlobal => buf.push(0x0f),
             Op::SetGlobal => buf.push(0xf0),
@@ -280,6 +282,7 @@ macro_rules! decode_op {
             a @ 0xf7...0xfe => {
                 $this.call(a - 0xf7)
             },
+            0xff => $this.op_loop(),
             _ => {
                 panic!("Unknown op {}", $op);
             }
