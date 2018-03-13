@@ -140,7 +140,11 @@ impl<'g> Compiler<'g> {
             },
             Stmt::Function(ref f) => self.function_decl(f),
             Stmt::Return(ref expr) => {
-                self.compile_expr(expr);
+                if let &Some(ref expr) = expr {
+                    self.compile_expr(expr);
+                } else {
+                    self.emit(Op::Nil);
+                }
                 self.emit(Op::Return);
             }
             // Stmt::Class(_) => {
@@ -175,8 +179,8 @@ impl<'g> Compiler<'g> {
     }
 
     fn compile_expr(&mut self, expr: &Expr) {
-        match *expr {
-            Expr::Binary(ref binary) => {
+        match expr.node {
+            ExprKind::Binary(ref binary) => {
                 match binary.operator {
                     BinaryOperator::GreaterThanEq | BinaryOperator::LessThanEq => {
                         // Swap to logically equivalent arguments
@@ -205,22 +209,22 @@ impl<'g> Compiler<'g> {
                     }
                 }
             }
-            Expr::Grouping(ref group) => self.compile_expr(group),
-            Expr::Literal(ref lit) => self.emit_constant(lit),
-            Expr::Unary(ref unary) => {
+            ExprKind::Grouping(ref group) => self.compile_expr(group),
+            ExprKind::Literal(ref lit) => self.emit_constant(lit),
+            ExprKind::Unary(ref unary) => {
                 self.compile_expr(&*unary.unary);
                 match unary.operator {
                     UnaryOperator::Minus => self.emit(Op::Negate),
                     UnaryOperator::Bang  => self.emit(Op::Not),
                 }
             },
-            Expr::Logical(ref logical) => {
+            ExprKind::Logical(ref logical) => {
                 match logical.operator {
                     LogicalOperator::And => self.and(&*logical.lhs, &*logical.rhs),
                     LogicalOperator::Or => self.or(&*logical.lhs, &*logical.rhs),
                 }
             },
-            Expr::Var(ref var) => {
+            ExprKind::Var(ref var) => {
                 match var.scope() {
                     Scope::Global => {
                         self.emit(Op::GetGlobal);
@@ -240,7 +244,7 @@ impl<'g> Compiler<'g> {
                     },
                 }
             }
-            Expr::Assign(ref var, ref expr) => {
+            ExprKind::Assign(ref var, ref expr) => {
                 self.compile_expr(expr);
                 match var.scope() {
                     Scope::Global => self.set_global(var.name()),
@@ -251,7 +255,7 @@ impl<'g> Compiler<'g> {
                     },
                 }
             },
-            Expr::Call(ref call) => {
+            ExprKind::Call(ref call) => {
                 self.compile_expr(&call.callee);
                 let arity = call.arguments.len();
                 for arg in call.arguments.iter() {
@@ -333,7 +337,7 @@ impl<'g> Compiler<'g> {
     fn end_function(&mut self) -> Value {
         self.emit(Op::Nil);
         self.emit(Op::Return);
-        let mut state = self.states.pop().expect("states to be nonempty");
+        let state = self.states.pop().expect("states to be nonempty");
         #[cfg(debug_assertions)]
         {
             self.dissassemble(state.function.chunk());
