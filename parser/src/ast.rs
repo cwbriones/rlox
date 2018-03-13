@@ -181,22 +181,22 @@ impl Stmt {
     }
 
     pub fn position(&self) -> Option<&Position> {
-        None
-        // match *self {
-        //     Stmt::Expr(ref expr) => {
-        //         None
-        //     }
-            // Print(Expr),
-            // Var(Variable, Expr),
-            // Block(Vec<Stmt>),
-            // If(Expr, Box<Stmt>, Option<Box<Stmt>>),
-            // While(Expr, Box<Stmt>),
-            // Break,
-            // Function(FunctionStmt),
-            // Return(Expr),
-            // Class(Class),
-        //     _ => None,
-        // }
+        match *self {
+            Stmt::Expr(ref expr) => Some(&expr.pos),
+            Stmt::Print(ref expr) => Some(&expr.pos),
+            Stmt::If(ref expr, _, _) => Some(&expr.pos),
+            Stmt::While(ref expr, _) => Some(&expr.pos),
+            Stmt::Return(ref retval) => {
+                retval.as_ref().map(|e| &e.pos)
+            }
+            // FIXME: Maybe reconsider which position to return
+            // for those below.
+            Stmt::Var(_, ref expr) => Some(&expr.pos),
+            Stmt::Block(_) => None,
+            Stmt::Break => None,
+            Stmt::Class(_) => None,
+            Stmt::Function(_) => None,
+        }
     }
 }
 
@@ -217,6 +217,10 @@ impl Expr {
             pos,
             node,
         }
+    }
+
+    pub fn line(&self) -> usize {
+        self.pos.line
     }
 }
 

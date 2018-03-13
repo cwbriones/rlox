@@ -93,6 +93,10 @@ impl<'g> Compiler<'g> {
     }
 
     fn compile_stmt(&mut self, stmt: &Stmt) {
+        let line = stmt.position().map(|pos| pos.line);
+        if let Some(line) = line {
+            self.state_mut().line = line;
+        }
         match *stmt {
             Stmt::Print(ref expr) => {
                 self.compile_expr(expr);
@@ -132,6 +136,7 @@ impl<'g> Compiler<'g> {
                 self.compile_stmt(body);
                 self.emit_jmp_to(ip);
                 self.patch_jmp(end_jmp);
+                self.emit(Op::Pop); // condition
 
                 // Patch all breaks to end at `end_jmp`
                 for b in self.state_mut().breaks() {
