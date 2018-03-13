@@ -6,8 +6,8 @@ use std::cell::RefCell;
 pub mod dsl {
     use super::*;
 
-    pub fn binary(operator: BinaryOperator, lhs: Expr, rhs: Expr) -> Expr {
-        Expr::binary(operator, lhs, rhs)
+    pub fn binary(operator: BinaryOperator, lhs: Expr, rhs: Expr) -> ExprKind {
+        ExprKind::binary(operator, lhs, rhs)
     }
 
     // TODO: Write test for parsing logical operator
@@ -15,40 +15,40 @@ pub mod dsl {
     //     Expr::logical(operator, lhs, rhs)
     // }
 
-    pub fn unary(operator: UnaryOperator, unary: Expr) -> Expr {
-        Expr::unary(operator, unary)
+    pub fn unary(operator: UnaryOperator, unary: Expr) -> ExprKind {
+        ExprKind::unary(operator, unary)
     }
 
-    pub fn number(n: f64) -> Expr {
-        Expr::Literal(Literal::Number(n))
+    pub fn number(n: f64) -> ExprKind {
+        ExprKind::Literal(Literal::Number(n))
     }
 
-    pub fn nil() -> Expr {
-        Expr::Literal(Literal::Nil)
+    pub fn nil() -> ExprKind {
+        ExprKind::Literal(Literal::Nil)
     }
 
-    pub fn truelit() -> Expr {
-        Expr::Literal(Literal::True)
+    pub fn truelit() -> ExprKind {
+        ExprKind::Literal(Literal::True)
     }
 
     // pub fn falselit() -> Expr {
     //     Expr::Literal(Value::False)
     // }
 
-    pub fn string<S: Into<String>>(s: S) -> Expr {
-        Expr::Literal(Literal::String(s.into()))
+    pub fn string<S: Into<String>>(s: S) -> ExprKind {
+        ExprKind::Literal(Literal::String(s.into()))
     }
 
-    pub fn grouping(expr: Expr) -> Expr {
-        Expr::Grouping(Box::new(expr))
+    pub fn grouping(expr: Expr) -> ExprKind {
+        ExprKind::Grouping(Box::new(expr))
     }
 
-    pub fn var(name: &str) -> Expr {
-        Expr::Var(Variable::new_global(name))
+    pub fn var(name: &str) -> ExprKind {
+        ExprKind::Var(Variable::new_global(name))
     }
 
-    pub fn assign(name: &str, assignment: Expr) -> Expr {
-        Expr::Assign(Variable::new_global(name), Box::new(assignment))
+    pub fn assign(name: &str, assignment: Expr) -> ExprKind {
+        ExprKind::Assign(Variable::new_global(name), Box::new(assignment))
     }
 }
 
@@ -95,15 +95,24 @@ impl Variable {
 
 #[derive(PartialEq, Debug)]
 pub enum Stmt {
+    // Needs line
     Expr(Expr),
+    // Needs line
     Print(Expr),
+    // Needs line
     Var(Variable, Expr),
+    // Does not need line
     Block(Vec<Stmt>),
+    // Does not need line
     If(Expr, Box<Stmt>, Option<Box<Stmt>>),
+    // Does not need line
     While(Expr, Box<Stmt>),
+    // Needs line
     Break,
+    // Needs line, internally.
     Function(FunctionStmt),
-    Return(Expr),
+    // Needs line
+    Return(Option<Expr>),
     Class(Class),
 }
 
@@ -170,10 +179,49 @@ impl Stmt {
             superclass,
         })
     }
+
+    pub fn position(&self) -> Option<&Position> {
+        None
+        // match *self {
+        //     Stmt::Expr(ref expr) => {
+        //         None
+        //     }
+            // Print(Expr),
+            // Var(Variable, Expr),
+            // Block(Vec<Stmt>),
+            // If(Expr, Box<Stmt>, Option<Box<Stmt>>),
+            // While(Expr, Box<Stmt>),
+            // Break,
+            // Function(FunctionStmt),
+            // Return(Expr),
+            // Class(Class),
+        //     _ => None,
+        // }
+    }
 }
 
 #[derive(PartialEq, Debug)]
-pub enum Expr {
+pub struct Expr {
+    pub pos: Position,
+    pub node: ExprKind,
+}
+
+impl Expr {
+    pub fn dummy(node: ExprKind) -> Expr {
+        let pos = Position {
+            start: 0,
+            end: 0,
+            line: 0,
+        };
+        Expr {
+            pos,
+            node,
+        }
+    }
+}
+
+#[derive(PartialEq, Debug)]
+pub enum ExprKind {
     Logical(Logical),
     Binary(Binary),
     Call(Call),
@@ -189,9 +237,9 @@ pub enum Expr {
     Function(Rc<RefCell<FunctionDecl>>),
 }
 
-impl Expr {
-    pub fn call(callee: Expr, position: Position, arguments: Vec<Expr>) -> Expr {
-        Expr::Call(Call{
+impl ExprKind {
+    pub fn call(callee: Expr, position: Position, arguments: Vec<Expr>) -> ExprKind {
+        ExprKind::Call(Call{
             callee: Box::new(callee),
             position: position,
             arguments: arguments,
@@ -199,7 +247,7 @@ impl Expr {
     }
 
     pub(super) fn binary(operator: BinaryOperator, lhs: Expr, rhs: Expr) -> Self {
-        Expr::Binary(Binary {
+        ExprKind::Binary(Binary {
             lhs: Box::new(lhs),
             rhs: Box::new(rhs),
             operator: operator,
@@ -207,7 +255,7 @@ impl Expr {
     }
 
     pub(super) fn logical(operator: LogicalOperator, lhs: Expr, rhs: Expr) -> Self {
-        Expr::Logical(Logical {
+        ExprKind::Logical(Logical {
             lhs: Box::new(lhs),
             rhs: Box::new(rhs),
             operator: operator,
@@ -215,23 +263,23 @@ impl Expr {
     }
 
     pub(super) fn unary(operator: UnaryOperator, unary: Expr) -> Self {
-        Expr::Unary(Unary {
+        ExprKind::Unary(Unary {
             operator: operator,
             unary: Box::new(unary),
         })
     }
 
     pub(super) fn get(expr: Expr, name: &str) -> Self {
-        Expr::Get(Box::new(expr), name.to_owned())
+        ExprKind::Get(Box::new(expr), name.to_owned())
     }
 
     pub(super) fn set(expr: Box<Expr>, name: String, value: Expr) -> Self {
         // FIXME: This is strangely coupled
-        Expr::Set(expr, name, Box::new(value))
+        ExprKind::Set(expr, name, Box::new(value))
     }
 
     pub(super) fn function(declaration: FunctionDecl) -> Self {
-        Expr::Function(Rc::new(RefCell::new(declaration)))
+        ExprKind::Function(Rc::new(RefCell::new(declaration)))
     }
 }
 

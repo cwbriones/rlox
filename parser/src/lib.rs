@@ -30,7 +30,7 @@ use std::iter::Peekable;
 
 use self::errors::*;
 use self::scanner::Scanner;
-use self::ast::{Expr, Stmt, Literal, FunctionDecl, FunctionStmt, Variable};
+use self::ast::{Expr, ExprKind, Stmt, Literal, FunctionDecl, FunctionStmt, Variable};
 use self::scanner::Token;
 use self::scanner::TokenType;
 
@@ -89,7 +89,10 @@ macro_rules! __binary_rule (
                 };
                 let rhs = self.$inner()?;
                 let operator = tok.ty.$convert().expect("attempted invalid conversion into operator type");
-                expr = $cons(operator, expr, rhs);
+                expr = Expr {
+                    pos: tok.position,
+                    node: $cons(operator, expr, rhs),
+                };
             }
             Ok(expr)
         }
@@ -98,13 +101,13 @@ macro_rules! __binary_rule (
 
 macro_rules! logical_impl (
     ($name:ident, $inner:ident, $($pattern:pat)|*) => (
-        __binary_rule!($name, $inner, into_logical, Expr::logical, $($pattern)|*);
+        __binary_rule!($name, $inner, into_logical, ExprKind::logical, $($pattern)|*);
     );
 );
 
 macro_rules! binary_impl (
     ($name:ident, $inner:ident, $($pattern:pat)|*) => (
-        __binary_rule!($name, $inner, into_binary, Expr::binary, $($pattern)|*);
+        __binary_rule!($name, $inner, into_binary, ExprKind::binary, $($pattern)|*);
     );
 );
 
@@ -162,7 +165,7 @@ impl<'t> Parser<'t> {
                 self.class_decl()
             },
             TokenType::Keyword(Keyword::Fun) => {
-                self.advance()?;
+                let keyword = self.advance()?;
                 if let TokenType::Identifier = self.peek_type()? {
                     let ident = self.advance()?;
                     let decl = self.function_declaration()?;
@@ -173,7 +176,9 @@ impl<'t> Parser<'t> {
                     // and this would already be handled.
                     let decl = self.function_declaration()?;
                     self.expect(TokenType::Semicolon, "lambda expression")?;
-                    Ok(Stmt::Expr(Expr::function(decl)))
+                    let pos = keyword.position;
+                    let node = ExprKind::function(decl);
+                    Ok(Stmt::Expr(Expr{ pos, node }))
                 }
             },
             _ => self.statement(),
@@ -245,7 +250,10 @@ impl<'t> Parser<'t> {
     // varDecl → "var" IDENTIFIER ( "=" expression )? ";" ;
     fn var_decl(&mut self) -> Result<Stmt> {
         let ident = self.expect(TokenType::Identifier, "keyword 'var'")?;
-        let mut initializer = Expr::Literal(Literal::Nil);
+        let mut initializer = Expr {
+            pos: ident.position,
+            node: ExprKind::Literal(Literal::Nil)
+        };
         if let TokenType::Equal = self.peek_type()? {
             self.advance()?;
             initializer = self.expression()?;
@@ -301,9 +309,9 @@ impl<'t> Parser<'t> {
 
     fn return_statement(&mut self) -> Result<Stmt> {
         let expr = if let TokenType::Semicolon = self.peek_type()? {
-            Expr::Literal(Literal::Nil)
+            None
         } else {
-            self.expression()?
+            Some(self.expression()?)
         };
         self.expect(TokenType::Semicolon, "return")?;
         Ok(Stmt::Return(expr))
@@ -346,10 +354,10 @@ impl<'t> Parser<'t> {
         };
 
         let condition = match self.peek_type()? {
-            TokenType::Semicolon => Expr::Literal(Literal::True),
-            _ => self.expression()?,
+            TokenType::Semicolon => None,
+            _ => Some(self.expression()?),
         };
-        self.expect(TokenType::Semicolon, "for condition")?;
+        let condition_pos = self.expect(TokenType::Semicolon, "for condition")?.position;
 
         let increment = match self.peek_type()? {
             TokenType::RightParen => None,
@@ -366,8 +374,14 @@ impl<'t> Parser<'t> {
             },
             None => body,
         };
+        let condition_expr = condition.unwrap_or_else(|| {
+            Expr {
+                pos: condition_pos,
+                node: ExprKind::Literal(Literal::True),
+            }
+        });
 
-        let while_loop = Stmt::While(condition, Box::new(body));
+        let while_loop = Stmt::While(condition_expr, Box::new(body));
         match init {
             Some(init) => Ok(Stmt::Block(vec![init, while_loop])),
             None => Ok(while_loop),
@@ -412,10 +426,13 @@ impl<'t> Parser<'t> {
         if let TokenType::Equal = self.peek_type()? {
             self.advance()?;
             let value = self.assignment()?;
-            if let Expr::Var(var) = expr {
-                return Ok(Expr::Assign(var, Box::new(value)));
-            } else if let Expr::Get(expr, name) = expr {
-                return Ok(Expr::set(expr, name, value));
+            if let ExprKind::Var(var) = expr.node {
+                let node = ExprKind::Assign(var, Box::new(value));
+                return Ok(Expr { node, pos: expr.pos });
+            } else if let ExprKind::Get(expr, name) = expr.node {
+                let pos = expr.pos;
+                let node = ExprKind::set(expr, name, value);
+                return Ok(Expr { node, pos });
             }
             return Err(SyntaxError::InvalidAssignment);
         }
@@ -446,8 +463,8 @@ impl<'t> Parser<'t> {
                 let tok = self.advance()?;
                 let operator = tok.ty.into_unary().unwrap();
                 let unary = self.unary()?;
-
-                Ok(Expr::unary(operator, unary))
+                let node = ExprKind::unary(operator, unary);
+                Ok(Expr { node, pos: tok.position })
             }
             _ => self.call()
         }
@@ -462,9 +479,10 @@ impl<'t> Parser<'t> {
                     expr = self.finish_call(expr)?;
                 },
                 TokenType::Dot => {
-                    self.advance()?;
+                    let pos = self.advance()?.position;
                     let name = self.expect(TokenType::Identifier, "'.'")?;
-                    expr = Expr::get(expr, name.value);
+                    let node = ExprKind::get(expr, name.value);
+                    expr = Expr { node, pos };
                 },
                 _ => break,
             }
@@ -494,7 +512,10 @@ impl<'t> Parser<'t> {
         }
 
         let paren = self.expect(TokenType::RightParen, "arguments")?;
-        Ok(Expr::call(callee, paren.position, arguments))
+        Ok(Expr {
+            pos: callee.pos,
+            node: ExprKind::call(callee, paren.position, arguments)
+        })
     }
 
     // primary    → NUMBER | STRING | "false" | "true" | "nil"
@@ -508,48 +529,65 @@ impl<'t> Parser<'t> {
                 self.expect(TokenType::Dot, "keyword 'super'")?;
                 let ident = self.expect(TokenType::Identifier, "superclass method name")?;
                 let var = Variable::new_local("super");
-                Ok(Expr::Super(var, keyword.position, ident.value.to_owned()))
+                let node = ExprKind::Super(var, keyword.position, ident.value.to_owned());
+                let pos = keyword.position;
+                Ok(Expr { node, pos })
             },
             TokenType::Keyword(Keyword::This) => {
                 let var = Variable::new_local("this");
                 let previous = self.advance()?;
-                Ok(Expr::This(var, previous.position))
+                let node = ExprKind::This(var, previous.position);
+                Ok(Expr {
+                    node,
+                    pos: previous.position,
+                })
             },
             TokenType::Keyword(Keyword::Nil) => {
-                self.advance()?;
-                Ok(Expr::Literal(Literal::Nil))
+                let pos = self.advance()?.position;
+                let node = ExprKind::Literal(Literal::Nil);
+                Ok(Expr { node, pos })
             },
             TokenType::Keyword(Keyword::True) => {
-                self.advance()?;
-                Ok(Expr::Literal(Literal::True))
+                let pos = self.advance()?.position;
+                let node = ExprKind::Literal(Literal::True);
+                Ok(Expr { node, pos })
             },
             TokenType::Keyword(Keyword::False) => {
-                self.advance()?;
-                Ok(Expr::Literal(Literal::False))
+                let pos = self.advance()?.position;
+                let node = ExprKind::Literal(Literal::False);
+                Ok(Expr { node, pos })
             },
             TokenType::String(s) => {
-                self.advance()?;
-                Ok(Expr::Literal(Literal::String(s.into())))
+                let pos = self.advance()?.position;
+                let node = ExprKind::Literal(Literal::String(s.into()));
+                Ok(Expr { node, pos })
             },
             TokenType::Number(n) => {
-                self.advance()?;
-                Ok(Expr::Literal(Literal::Number(n)))
+                let pos = self.advance()?.position;
+                let node = ExprKind::Literal(Literal::Number(n));
+                Ok(Expr { node, pos })
             },
             TokenType::LeftParen => {
-                self.advance()?;
+                let pos = self.advance()?.position;
                 let expr = self.expression()?;
                 self.expect(TokenType::RightParen, "expression")?;
-                Ok(Expr::Grouping(Box::new(expr)))
+                let node = ExprKind::Grouping(Box::new(expr));
+                Ok(Expr { node, pos })
             },
             TokenType::Identifier => {
                 let token = self.advance()?;
                 let var = Variable::new_global(token.value.into());
-                Ok(Expr::Var(var))
+                let node = ExprKind::Var(var);
+                Ok(Expr { pos: token.position, node })
             },
             TokenType::Keyword(Keyword::Fun) => {
-                self.advance()?;
+                let token = self.advance()?;
                 let declaration = self.function_declaration()?;
-                Ok(Expr::function(declaration))
+                let node = ExprKind::function(declaration);
+                Ok(Expr {
+                    node,
+                    pos: token.position
+                })
             },
             _ => Err(SyntaxError::PrimaryFailure)
         }

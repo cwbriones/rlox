@@ -1,4 +1,4 @@
-use parser::ast::{Stmt, Expr, Literal};
+use parser::ast::{Stmt, Expr, ExprKind, Literal};
 
 pub struct PrettyPrinter {
     inner: String,
@@ -103,7 +103,11 @@ impl PrettyPrinter {
                 self.newline(indent).push_char('}');
             },
             Stmt::Return(ref expr) => {
-                self.push("return ").push_expr(expr).push_char(';');
+                self.push("return");
+                if let &Some(ref expr) = expr {
+                    self.push_char(' ').push_expr(expr);
+                }
+                self.push_char(';');
             },
             Stmt::Class(ref cls) => {
                 self.push("class ").push(cls.var.name());
@@ -124,21 +128,21 @@ impl PrettyPrinter {
     }
 
     fn push_expr(&mut self, expr: &Expr) -> &mut Self {
-        match *expr {
-            Expr::Binary(ref bin) => {
+        match expr.node {
+            ExprKind::Binary(ref bin) => {
                 let op = bin.operator;
                 self.push_expr(&bin.lhs).push_char(' ').push(op.to_str())
                     .push_char(' ').push_expr(&bin.rhs);
             },
-            Expr::Logical(ref logical) => {
+            ExprKind::Logical(ref logical) => {
                 let op = logical.operator;
                 self.push_expr(&logical.lhs).push_char(' ').push(op.to_str())
                     .push_char(' ').push_expr(&logical.rhs);
             },
-            Expr::Grouping(ref group) => {
+            ExprKind::Grouping(ref group) => {
                 self.push_char('(').push_expr(group).push_char(')');
             },
-            Expr::Literal(ref lit) => {
+            ExprKind::Literal(ref lit) => {
                 match *lit {
                     Literal::Number(n) => { self.push(n.to_string()); },
                     Literal::String(ref s) => {
@@ -149,27 +153,27 @@ impl PrettyPrinter {
                     Literal::Nil => { self.push("nil"); },
                 }
             },
-            Expr::Unary(ref unary) => {
+            ExprKind::Unary(ref unary) => {
                 let op = unary.operator;
                 self.push(op.to_str()).push_expr(&unary.unary);
             },
-            Expr::Var(ref var) => {
+            ExprKind::Var(ref var) => {
                 self.push(var.name());
             },
-            Expr::Assign(ref var, ref expr) => {
+            ExprKind::Assign(ref var, ref expr) => {
                 self.push(var.name()).push(" = ").push_expr(expr);
             },
-            Expr::Call(ref call) => {
+            ExprKind::Call(ref call) => {
                 self.push_expr(&call.callee).push_char(')');
                 for arg in &call.arguments {
                     self.push_expr(arg).push_char(',');
                 }
                 self.pop();
             },
-            Expr::Get(ref lhs, ref property) => {
+            ExprKind::Get(ref lhs, ref property) => {
                 self.push_expr(lhs).push_char('.').push(property);
             },
-            Expr::Set(ref expr, ref name, ref value) => {
+            ExprKind::Set(ref expr, ref name, ref value) => {
                 self.push_expr(expr)
                     .push_char('.')
                     .push(name)
@@ -177,9 +181,9 @@ impl PrettyPrinter {
                     .push_expr(value)
                     .push_char(';');
             },
-            Expr::This(_, _) => { self.push("this"); },
-            Expr::Super(_, _, ref method) => { self.push("super").push_char('.').push(method); },
-            Expr::Function(ref function) => {
+            ExprKind::This(_, _) => { self.push("this"); },
+            ExprKind::Super(_, _, ref method) => { self.push("super").push_char('.').push(method); },
+            ExprKind::Function(ref function) => {
                 let decl = function.borrow();
                 for param in &decl.parameters {
                     self.push(param.name()).push_char(',');

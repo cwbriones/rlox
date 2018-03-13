@@ -161,7 +161,11 @@ impl Resolver {
             Stmt::Return(ref mut expr) => {
                 match self.function {
                     Some(FunctionType::Initializer) => return Err(ResolveError::ReturnFromInitializer),
-                    Some(_) => self.resolve_expr(expr)?,
+                    Some(_) => {
+                        if let &mut Some(ref mut expr) = expr {
+                            self.resolve_expr(expr)?
+                        }
+                    }
                     None => return Err(ResolveError::ReturnOutsideFunction),
                 }
             },
@@ -200,52 +204,52 @@ impl Resolver {
     }
 
     pub fn resolve_expr(&mut self, expr: &mut Expr) -> Result {
-        match *expr {
-            Expr::Grouping(ref mut inner) => {
+        match expr.node {
+            ExprKind::Grouping(ref mut inner) => {
                 self.resolve_expr(inner)?;
             },
-            Expr::Logical(ref mut inner) => {
+            ExprKind::Logical(ref mut inner) => {
                 self.resolve_expr(&mut inner.lhs)?;
                 self.resolve_expr(&mut inner.rhs)?;
             },
-            Expr::Binary(ref mut inner) => {
+            ExprKind::Binary(ref mut inner) => {
                 self.resolve_expr(&mut inner.lhs)?;
                 self.resolve_expr(&mut inner.rhs)?;
             },
-            Expr::Unary(ref mut inner) => {
+            ExprKind::Unary(ref mut inner) => {
                 self.resolve_expr(&mut inner.unary)?;
             },
-            Expr::Literal(_) => {},
-            Expr::Var(ref mut var) => {
+            ExprKind::Literal(_) => {},
+            ExprKind::Var(ref mut var) => {
                 if let Some(false) = self.scopes.check_var(var.name()) {
                     return Err(ResolveError::InitializerSelfReference);
                 }
                 self.scopes.resolve_local(var);
             },
-            Expr::Assign(ref mut var, ref mut value) => {
+            ExprKind::Assign(ref mut var, ref mut value) => {
                 self.resolve_expr(value)?;
                 self.scopes.resolve_local(var);
             },
-            Expr::Call(ref mut call) => {
+            ExprKind::Call(ref mut call) => {
                 self.resolve_expr(&mut call.callee)?;
                 for arg in &mut call.arguments {
                     self.resolve_expr(arg)?;
                 }
             },
-            Expr::Get(ref mut lhs, _) => {
+            ExprKind::Get(ref mut lhs, _) => {
                 self.resolve_expr(lhs)?;
             },
-            Expr::Set(ref mut expr, _, ref mut value) => {
+            ExprKind::Set(ref mut expr, _, ref mut value) => {
                 self.resolve_expr(expr)?;
                 self.resolve_expr(value)?;
             },
-            Expr::This(ref mut var, _) => {
+            ExprKind::This(ref mut var, _) => {
                 if self.class.is_none() {
                     return Err(ResolveError::ThisOutsideClass);
                 }
                 self.scopes.resolve_local(var);
             },
-            Expr::Super(ref mut var, _, _) => {
+            ExprKind::Super(ref mut var, _, _) => {
                 match self.class {
                     None => Err(ResolveError::SuperOutsideClass),
                     Some(ClassType::Class) => Err(ResolveError::SuperInBaseClass),
@@ -253,7 +257,7 @@ impl Resolver {
                 }?;
                 self.scopes.resolve_local(var);
             },
-            Expr::Function(ref mut function) => {
+            ExprKind::Function(ref mut function) => {
                 let mut declaration = function.borrow_mut();
                 self.resolve_function(&mut *declaration, FunctionType::Function)?;
             },

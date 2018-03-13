@@ -135,8 +135,11 @@ impl Eval for Stmt {
 			},
             Stmt::Break => return Err(RuntimeError::Break),
             Stmt::Return(ref expr) => {
-                let retval = expr.eval(interpreter, env)?;
-                interpreter.push_return(retval);
+                let retval =
+                    expr.as_ref()
+                        .map(|e| e.eval(interpreter, env))
+                        .unwrap_or(Ok(Value::Nil));
+                interpreter.push_return(retval?);
                 return Err(RuntimeError::Return);
             },
             Stmt::Class(ref class_decl) => {
@@ -165,13 +168,13 @@ impl Eval for Stmt {
 
 impl Eval for Expr {
     fn eval(&self, interpreter: &mut Interpreter, env: &mut Environment) -> Result<Value> {
-        match *self {
-            Expr::Grouping(ref inner) => inner.eval(interpreter, env),
-            Expr::Logical(ref inner) => inner.eval(interpreter, env),
-            Expr::Binary(ref inner) => inner.eval(interpreter, env),
-            Expr::Unary(ref inner) => inner.eval(interpreter, env),
-            Expr::Literal(ref inner) => inner.eval(interpreter, env),
-            Expr::Var(ref var) => {
+        match self.node {
+            ExprKind::Grouping(ref inner) => inner.eval(interpreter, env),
+            ExprKind::Logical(ref inner) => inner.eval(interpreter, env),
+            ExprKind::Binary(ref inner) => inner.eval(interpreter, env),
+            ExprKind::Unary(ref inner) => inner.eval(interpreter, env),
+            ExprKind::Literal(ref inner) => inner.eval(interpreter, env),
+            ExprKind::Var(ref var) => {
                 match interpreter.lookup(env, var) {
                     None => return Err(RuntimeError::UndefinedVariable(var.name().into())),
                     Some(v) => {
@@ -179,7 +182,7 @@ impl Eval for Expr {
                     }
                 }
             },
-            Expr::Assign(ref var, ref lhs) => {
+            ExprKind::Assign(ref var, ref lhs) => {
                 let lhs = lhs.eval(interpreter, env)?;
                 if interpreter.assign(env, var, lhs.clone()) {
                     Ok(lhs)
@@ -187,8 +190,8 @@ impl Eval for Expr {
                     Err(RuntimeError::UndefinedVariable(var.name().into()))
                 }
             },
-            Expr::Call(ref inner) => inner.eval(interpreter, env),
-            Expr::Get(ref expr, ref property) => {
+            ExprKind::Call(ref inner) => inner.eval(interpreter, env),
+            ExprKind::Get(ref expr, ref property) => {
                 if let Value::Instance(ref mut instance) = expr.eval(interpreter, env)? {
                     instance.get(property)
                         .ok_or_else(|| RuntimeError::UndefinedProperty(property.clone()))
@@ -196,7 +199,7 @@ impl Eval for Expr {
                     Err(RuntimeError::BadAccess)
                 }
             },
-            Expr::Set(ref lhs, ref name, ref value) => {
+            ExprKind::Set(ref lhs, ref name, ref value) => {
                 let mut instance = lhs.eval(interpreter, env)?;
                 let value = value.eval(interpreter, env)?;
                 if let Value::Instance(ref mut instance) = instance {
@@ -206,12 +209,12 @@ impl Eval for Expr {
                     Err(RuntimeError::BadPropertyAccess)
                 }
             },
-            Expr::This(ref this, _) => {
+            ExprKind::This(ref this, _) => {
                 // Any use of 'this' has already been validated
                 let val = interpreter.lookup(env, this).expect("'this' should always be defined");
                 Ok(val)
             },
-            Expr::Super(ref supervar, _, ref method) => {
+            ExprKind::Super(ref supervar, _, ref method) => {
                 // XXX: This is all kind of hacky.
                 //
                 // Any use of 'super' has already been validated
@@ -235,7 +238,7 @@ impl Eval for Expr {
                     None => Err(RuntimeError::UndefinedProperty(method.to_owned())),
                 }
             },
-            Expr::Function(ref declaration) => {
+            ExprKind::Function(ref declaration) => {
                 Ok(Value::new_lambda(declaration.clone(), env.clone()))
             },
         }
