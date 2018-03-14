@@ -76,6 +76,7 @@ pub struct LoxFunction {
     name: Option<String>,
     declaration: Rc<RefCell<FunctionDecl>>,
     closure: Environment,
+    is_method: bool,
 }
 
 impl LoxFunction {
@@ -85,6 +86,7 @@ impl LoxFunction {
             name,
             declaration,
             closure,
+            is_method: false,
         }
     }
 
@@ -93,6 +95,7 @@ impl LoxFunction {
             name: None,
             declaration,
             closure,
+            is_method: false,
         }
     }
 
@@ -103,7 +106,13 @@ impl LoxFunction {
             name: self.name.clone(),
             declaration: self.declaration.clone(),
             closure: closure,
+            is_method: true,
         }
+    }
+
+    fn is_initializer(&self) -> bool {
+        self.is_method &&
+            self.name.as_ref().map(|s| s == "init").unwrap_or(false)
     }
 
     fn call(&self, interpreter: &mut Interpreter, arguments: Vec<Value>) -> Result<Value, RuntimeError> {
@@ -121,7 +130,11 @@ impl LoxFunction {
             },
             val => val,
         }?;
-        return Ok(Value::Nil)
+        if self.is_initializer() {
+            // This is always bound 1 level above.
+            return Ok(env.get_at("this", 1).expect("this to be bound"));
+        }
+        Ok(Value::Nil)
     }
 
     fn arity(&self) -> usize {

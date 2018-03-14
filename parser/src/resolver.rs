@@ -159,17 +159,15 @@ impl Resolver {
                 }
             },
             Stmt::Return(ref mut expr) => {
-                match self.function {
-                    Some(FunctionType::Initializer) => return Err(ResolveError::ReturnFromInitializer),
-                    Some(_) => {
-                        if let &mut Some(ref mut expr) = expr {
-                            self.resolve_expr(expr)?
-                        }
-                    }
-                    None => return Err(ResolveError::ReturnOutsideFunction),
+                match (self.function, expr) {
+                    (Some(FunctionType::Initializer), &mut Some(_)) =>
+                        return Err(ResolveError::ReturnFromInitializer),
+                    (Some(_), &mut Some(ref mut expr)) => self.resolve_expr(expr)?,
+                    (Some(_), _) => {},
+                    (None, _) => return Err(ResolveError::ReturnOutsideFunction),
                 }
             },
-            Stmt::Class(ref mut class_decl) => {
+            Stmt::Class(ref mut class_decl) =>{
                 self.scopes.init(class_decl.var.name())?;
                 let enclosing_class = self.class.take();
                 if let Some(ref mut superclass) = class_decl.superclass {
@@ -307,6 +305,12 @@ mod tests {
     #[test]
     fn return_from_init() {
         let prog = "class Foo { init() { return; } }";
+        parse_and_resolve(prog).unwrap();
+    }
+
+    #[test]
+    fn return_value_from_init() {
+        let prog = "class Foo { init() { return 1; } }";
         let err  = parse_and_resolve(prog).unwrap_err();
         assert_eq!(err, ResolveError::ReturnFromInitializer);
     }
