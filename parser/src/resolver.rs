@@ -56,9 +56,13 @@ impl Scopes {
     fn declare(&mut self, var: &str) -> Result {
         use std::collections::hash_map::Entry;
 
+        let is_local = self.scopes.len() > 1;
         let scope = self.scopes.last_mut().expect("scope stack to be nonempty");
+
         match scope.entry(var.into()) {
-            Entry::Occupied(_) => Err(ResolveError::AlreadyDeclared),
+            Entry::Occupied(_) if is_local => Err(ResolveError::AlreadyDeclared),
+            // Global Scope, okay to redeclare.
+            Entry::Occupied(_) => Ok(()),
             Entry::Vacant(entry) => {
                 entry.insert(false);
                 Ok(())
