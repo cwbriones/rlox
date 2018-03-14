@@ -14,12 +14,14 @@ const BINARY: &str = "../target/release/rlox";
 const EXPECT: &str = "expect: ";
 const EXPECT_ERR: &str = "expect runtime error: ";
 const EXPECT_PARSE_ERR: &str = "Error at";
+const LINE_PARSE_ERR: &str = "[line";
 
 const ERR_LOG: &str = "[error]: ";
 
 fn line_filter(mut line: String) -> Option<String> {
     line.find("// expect")
         .or_else(|| line.find("// Error at"))
+        .or_else(|| line.find("// [line"))
         .map(|idx| line.split_off(idx + 3)) // remove the comment
 }
 
@@ -54,7 +56,7 @@ fn execute_test(mod_path: &str, filename: &str) {
             expected_err.push_str(ERR_LOG);
             expected_err.push_str(o);
             expected_err.push('\n');
-        } else if expect.starts_with(EXPECT_PARSE_ERR) {
+        } else if expect.starts_with(EXPECT_PARSE_ERR) || expect.starts_with(LINE_PARSE_ERR) {
             let i = expect.find(": ").unwrap();
             // FIXME: This transforms the expected parse error into the format rlox reports,
             // consider making this the same as clox.
@@ -166,9 +168,12 @@ define_test_mod!(constructor,
     return_in_nested_function,
     return_value);
 
-define_test_mod!(expressions,
-    evaluate,
-    parse);
+// TODO: These are only used in the earlier parsing chapters,
+// and should be moved to equivalent parsing unit tests.
+//
+// define_test_mod!(expressions,
+//     evaluate,
+//     parse);
 
 define_test_mod!(field,
     call_function_field,
@@ -321,13 +326,16 @@ define_test_mod!(return_statement,
     in_method,
     return_nil_if_no_value);
 
-define_test_mod!(scanning,
-    identifiers,
-    keywords,
-    numbers,
-    punctuators,
-    strings,
-    whitespace);
+// TODO: These are only used in the earlier parsing chapters,
+// and should be moved to equivalent parsing unit tests.
+//
+// define_test_mod!(scanning,
+//     identifiers,
+//     keywords,
+//     numbers,
+//     punctuators,
+//     strings,
+//     whitespace);
 
 define_test_mod!(string,
     error_after_multiline,

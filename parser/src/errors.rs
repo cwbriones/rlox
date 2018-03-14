@@ -8,7 +8,7 @@ pub enum SyntaxError {
     UnterminatedString,
     #[fail(display = "expected {} after {}", _0, _1)]
     Missing(String, &'static str),
-    #[fail(display = "expected a literal or parenthesized expression")]
+    #[fail(display = "Expect expression.")]
     PrimaryFailure,
     #[fail(display = "Invalid assignment target.")]
     InvalidAssignment,

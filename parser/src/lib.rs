@@ -478,10 +478,10 @@ impl<'t> Parser<'t> {
             _ => {
                 loop {
                     // FIXME: This shouldn't stop parsing the call
+                    arguments.push(self.expression()?);
                     if arguments.len() > MAX_NUM_PARAMETERS {
                         return Err(SyntaxError::TooManyArguments);
                     }
-                    arguments.push(self.expression()?);
                     match self.peek_type()? {
                         TokenType::Comma => {
                             self.advance()?;
@@ -599,267 +599,276 @@ impl<'t> Parser<'t> {
 
 #[cfg(test)]
 mod tests {
-    use super::Parser;
-    use super::ast::{UnaryOperator,BinaryOperator,Stmt};
-    use super::ast::dsl::*;
-
-    #[test]
-    fn expression() {
-        let expressions = [
-            "1",
-            "1 + -1 * (1 + 1)"
-        ];
-        for expr in &expressions {
-            Parser::new(expr).expression().unwrap();
-        }
-    }
-
-    #[test]
-    fn expression_statement() {
-        let prog = r#"
-        1;
-        "foobar";
-        print (1 + 2) * -3;
-        "#;
-
-        let mut parser = Parser::new(prog);
-        let statements = parser.parse().unwrap();
-        assert_eq!(vec![
-            Stmt::Expr(number(1.0)),
-            Stmt::Expr(string("foobar")),
-            Stmt::Print(binary(
-                BinaryOperator::Star,
-                grouping(binary(
-                    BinaryOperator::Plus,
-                    number(1.0),
-                    number(2.0),
-                )),
-                unary(UnaryOperator::Minus, number(3.0)),
-            )),
-        ], statements);
-    }
-
-    #[test]
-    fn declaration() {
-        let prog = r#"
-        var a;
-        var b = 1 + 1;
-        a = 1;
-        "#;
-
-        let mut parser = Parser::new(prog);
-        let statements = parser.parse().unwrap();
-        assert_eq!(vec![
-            Stmt::var("a", nil()),
-            Stmt::var("b", binary(BinaryOperator::Plus, number(1.0), number(1.0))),
-            Stmt::Expr(assign("a", number(1.0)))
-        ], statements);
-    }
-
-    #[test]
-    fn block() {
-        let prog = r#"
-        {
-            var a = 1;
-            print a;
-        }
-        "#;
-
-        let mut parser = Parser::new(prog);
-        let statements = parser.parse().unwrap();
-        assert_eq!(vec![
-            Stmt::Block(vec![
-                Stmt::var("a", number(1.0)),
-                Stmt::Print(var("a")),
-            ])
-        ], statements);
-    }
-
-    #[test]
-    fn synchronize() {
-        let prog = r#"
-        var a;
-        var b = 1 + 1;
-        "#;
-
-        let mut parser = Parser::new(prog);
-        let statements = parser.parse().unwrap();
-        assert_eq!(vec![
-            Stmt::var("a", nil()),
-            Stmt::var("b", binary(BinaryOperator::Plus, number(1.0), number(1.0)))
-        ], statements);
-    }
-
-    #[test]
-    fn parse_with_comments() {
-        let prog = r#"
-        // Some insightful remark
-        1 + 1;
-        "#;
-
-        let mut parser = Parser::new(prog);
-        let statements = parser.parse().unwrap();
-        assert_eq!(vec![
-            Stmt::Expr(binary(
-                BinaryOperator::Plus,
-                number(1.0),
-                number(1.0),
-            )),
-        ], statements);
-    }
-
-    #[test]
-    fn parse_if_statement() {
-        let prog = r#"
-        if (true)
-            print "this";
-        else
-            print "that";
-        "#;
-
-        let mut parser = Parser::new(prog);
-        let statements = parser.parse().unwrap();
-        assert_eq!(vec![
-            Stmt::if_else_stmt(
-                truelit(),
-                Stmt::Print(string("this")),
-                Stmt::Print(string("that"))
-            )
-        ], statements);
-    }
-
-    #[test]
-    fn parse_while_loop() {
-        let prog = r#"
-        while (a > 1) {
-            print "body";
-        }
-        "#;
-
-        let mut parser = Parser::new(prog);
-        let statements = parser.parse().unwrap();
-        assert_eq!(vec![
-            Stmt::While(
-                binary(BinaryOperator::GreaterThan, var("a"), number(1.0)),
-                Box::new(Stmt::Block(vec![
-                    Stmt::Print(string("body"))
-                ]))
-            )
-        ], statements);
-    }
-
-    #[test]
-    fn break_statement() {
-        let prog = r#"
-        while (true) {
-            break;
-        }
-        "#;
-
-        let mut parser = Parser::new(prog);
-        let statements = parser.parse().unwrap();
-        assert_eq!(vec![
-            Stmt::While(
-                truelit(),
-                Box::new(Stmt::Block(vec![Stmt::Break]))
-            )
-        ], statements);
-    }
-
-    #[test]
-    fn call() {
-        let prog = r#"
-        call();
-        call(nil, 1, "two");
-        call(nested_one(nested_two(3)));
-        call(1)(2)("three");
-        "#;
-
-        let mut parser = Parser::new(prog);
-        parser.parse().unwrap();
-    }
-
-    #[test]
-    fn function() {
-        let prog = r#"
-            fun hello() {
-                print "hello";
-            }
-
-            fun increment(a) {
-                a + 1;
-            }
-
-            fun increment(a) {
-                return 1;
-            }
-        "#;
-
-        let mut parser = Parser::new(prog);
-        parser.parse().unwrap();
-    }
-
-    #[test]
-    fn property_get() {
-        let prog = r#"
-            a.field;
-            chained.field.access;
-            a.method.call();
-        "#;
-
-        let mut parser = Parser::new(prog);
-        parser.parse().unwrap();
-    }
-
-    #[test]
-    fn property_set() {
-        let prog = r#"
-            a.field = 1;
-            a.chain.of.access = "works";
-        "#;
-
-        let mut parser = Parser::new(prog);
-        parser.parse().unwrap();
-    }
-
-    #[test]
-    fn class() {
-        let prog = r#"
-            class Cake {
-                bake() {
-                    print "Baking...";
-                }
-
-                class classMethod() {
-                    print "Static...";
-                }
-            }
-        "#;
-
-        let mut parser = Parser::new(prog);
-        parser.parse().unwrap();
-    }
-
-    #[test]
-    fn superclass() {
-        let prog = r#"
-            class A < B {
-                init() {}
-            }
-        "#;
-
-        let mut parser = Parser::new(prog);
-        parser.parse().unwrap();
-    }
-
-    #[test]
-    fn lambda() {
-        let prog = r#"
-            var p = fun () { print x; };
-            fun () {};
-        "#;
-
-        let mut parser = Parser::new(prog);
-        parser.parse().unwrap();
-    }
+    // use super::Parser;
+    // use super::ast::{UnaryOperator,BinaryOperator,Stmt};
+    // use super::ast::dsl::*;
+    // use super::errors::SyntaxError;
+    //
+    // #[test]
+    // fn decimal_point_at_eof() {
+    //     let prog = "123.";
+    //
+    //     let mut parser = Parser::new(prog);
+    //     let errs = parser.parse().unwrap_err();
+    // }
+    //
+    // #[test]
+    // fn expression() {
+    //     let expressions = [
+    //         "1",
+    //         "1 + -1 * (1 + 1)"
+    //     ];
+    //     for expr in &expressions {
+    //         Parser::new(expr).expression().unwrap();
+    //     }
+    // }
+    //
+    // #[test]
+    // fn expression_statement() {
+    //     let prog = r#"
+    //     1;
+    //     "foobar";
+    //     print (1 + 2) * -3;
+    //     "#;
+    //
+    //     let mut parser = Parser::new(prog);
+    //     let statements = parser.parse().unwrap();
+    //     assert_eq!(vec![
+    //         Stmt::Expr(number(1.0)),
+    //         Stmt::Expr(string("foobar")),
+    //         Stmt::Print(binary(
+    //             BinaryOperator::Star,
+    //             grouping(binary(
+    //                 BinaryOperator::Plus,
+    //                 number(1.0),
+    //                 number(2.0),
+    //             )),
+    //             unary(UnaryOperator::Minus, number(3.0)),
+    //         )),
+    //     ], statements);
+    // }
+    //
+    // #[test]
+    // fn declaration() {
+    //     let prog = r#"
+    //     var a;
+    //     var b = 1 + 1;
+    //     a = 1;
+    //     "#;
+    //
+    //     let mut parser = Parser::new(prog);
+    //     let statements = parser.parse().unwrap();
+    //     assert_eq!(vec![
+    //         Stmt::var("a", nil()),
+    //         Stmt::var("b", binary(BinaryOperator::Plus, number(1.0), number(1.0))),
+    //         Stmt::Expr(assign("a", number(1.0)))
+    //     ], statements);
+    // }
+    //
+    // #[test]
+    // fn block() {
+    //     let prog = r#"
+    //     {
+    //         var a = 1;
+    //         print a;
+    //     }
+    //     "#;
+    //
+    //     let mut parser = Parser::new(prog);
+    //     let statements = parser.parse().unwrap();
+    //     assert_eq!(vec![
+    //         Stmt::Block(vec![
+    //             Stmt::var("a", number(1.0)),
+    //             Stmt::Print(var("a")),
+    //         ])
+    //     ], statements);
+    // }
+    //
+    // #[test]
+    // fn synchronize() {
+    //     let prog = r#"
+    //     var a;
+    //     var b = 1 + 1;
+    //     "#;
+    //
+    //     let mut parser = Parser::new(prog);
+    //     let statements = parser.parse().unwrap();
+    //     assert_eq!(vec![
+    //         Stmt::var("a", nil()),
+    //         Stmt::var("b", binary(BinaryOperator::Plus, number(1.0), number(1.0)))
+    //     ], statements);
+    // }
+    //
+    // #[test]
+    // fn parse_with_comments() {
+    //     let prog = r#"
+    //     // Some insightful remark
+    //     1 + 1;
+    //     "#;
+    //
+    //     let mut parser = Parser::new(prog);
+    //     let statements = parser.parse().unwrap();
+    //     assert_eq!(vec![
+    //         Stmt::Expr(binary(
+    //             BinaryOperator::Plus,
+    //             number(1.0),
+    //             number(1.0),
+    //         )),
+    //     ], statements);
+    // }
+    //
+    // #[test]
+    // fn parse_if_statement() {
+    //     let prog = r#"
+    //     if (true)
+    //         print "this";
+    //     else
+    //         print "that";
+    //     "#;
+    //
+    //     let mut parser = Parser::new(prog);
+    //     let statements = parser.parse().unwrap();
+    //     assert_eq!(vec![
+    //         Stmt::if_else_stmt(
+    //             truelit(),
+    //             Stmt::Print(string("this")),
+    //             Stmt::Print(string("that"))
+    //         )
+    //     ], statements);
+    // }
+    //
+    // #[test]
+    // fn parse_while_loop() {
+    //     let prog = r#"
+    //     while (a > 1) {
+    //         print "body";
+    //     }
+    //     "#;
+    //
+    //     let mut parser = Parser::new(prog);
+    //     let statements = parser.parse().unwrap();
+    //     assert_eq!(vec![
+    //         Stmt::While(
+    //             binary(BinaryOperator::GreaterThan, var("a"), number(1.0)),
+    //             Box::new(Stmt::Block(vec![
+    //                 Stmt::Print(string("body"))
+    //             ]))
+    //         )
+    //     ], statements);
+    // }
+    //
+    // #[test]
+    // fn break_statement() {
+    //     let prog = r#"
+    //     while (true) {
+    //         break;
+    //     }
+    //     "#;
+    //
+    //     let mut parser = Parser::new(prog);
+    //     let statements = parser.parse().unwrap();
+    //     assert_eq!(vec![
+    //         Stmt::While(
+    //             truelit(),
+    //             Box::new(Stmt::Block(vec![Stmt::Break]))
+    //         )
+    //     ], statements);
+    // }
+    //
+    // #[test]
+    // fn call() {
+    //     let prog = r#"
+    //     call();
+    //     call(nil, 1, "two");
+    //     call(nested_one(nested_two(3)));
+    //     call(1)(2)("three");
+    //     "#;
+    //
+    //     let mut parser = Parser::new(prog);
+    //     parser.parse().unwrap();
+    // }
+    //
+    // #[test]
+    // fn function() {
+    //     let prog = r#"
+    //         fun hello() {
+    //             print "hello";
+    //         }
+    //
+    //         fun increment(a) {
+    //             a + 1;
+    //         }
+    //
+    //         fun increment(a) {
+    //             return 1;
+    //         }
+    //     "#;
+    //
+    //     let mut parser = Parser::new(prog);
+    //     parser.parse().unwrap();
+    // }
+    //
+    // #[test]
+    // fn property_get() {
+    //     let prog = r#"
+    //         a.field;
+    //         chained.field.access;
+    //         a.method.call();
+    //     "#;
+    //
+    //     let mut parser = Parser::new(prog);
+    //     parser.parse().unwrap();
+    // }
+    //
+    // #[test]
+    // fn property_set() {
+    //     let prog = r#"
+    //         a.field = 1;
+    //         a.chain.of.access = "works";
+    //     "#;
+    //
+    //     let mut parser = Parser::new(prog);
+    //     parser.parse().unwrap();
+    // }
+    //
+    // #[test]
+    // fn class() {
+    //     let prog = r#"
+    //         class Cake {
+    //             bake() {
+    //                 print "Baking...";
+    //             }
+    //
+    //             class classMethod() {
+    //                 print "Static...";
+    //             }
+    //         }
+    //     "#;
+    //
+    //     let mut parser = Parser::new(prog);
+    //     parser.parse().unwrap();
+    // }
+    //
+    // #[test]
+    // fn superclass() {
+    //     let prog = r#"
+    //         class A < B {
+    //             init() {}
+    //         }
+    //     "#;
+    //
+    //     let mut parser = Parser::new(prog);
+    //     parser.parse().unwrap();
+    // }
+    //
+    // #[test]
+    // fn lambda() {
+    //     let prog = r#"
+    //         var p = fun () { print x; };
+    //         fun () {};
+    //     "#;
+    //
+    //     let mut parser = Parser::new(prog);
+    //     parser.parse().unwrap();
+    // }
 }

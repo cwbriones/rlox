@@ -506,12 +506,15 @@ mod tests {
             TokenType::EOF,
         ], &types[..]);
 
-        // We explicitly disallow a decimal point without a fractional part
-        let err = Scanner::new("1.").next().unwrap().unwrap_err();
-        match err {
-            SyntaxError::UnexpectedChar('.') => (),
-            _ => panic!("Expected SyntaxError::UnexpectedChar"),
-        }
+        // We explicitly disallow a decimal point without a fractional part,
+        // but this should not happen during scanning.
+        let tokens = Scanner::new("123.;").collect::<Result<Vec<_>>>().unwrap();
+        let types = tokens.iter().map(|t| t.ty).collect::<Vec<_>>();
+        assert_eq!(&[
+            TokenType::Number(123.0),
+            TokenType::Dot,
+            TokenType::EOF,
+        ], &types[..]);
     }
 
     #[test]
