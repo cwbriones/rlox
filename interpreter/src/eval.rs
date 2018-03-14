@@ -4,28 +4,32 @@ use value::Value;
 
 #[derive(Debug, Fail)]
 pub enum RuntimeError {
-    #[fail(display = "division by zero")]
+    #[fail(display = "Division by zero.")]
     DivideByZero,
-    #[fail(display = "variable '{}' could not be resolved", _0)]
+    #[fail(display = "Undefined variable '{}'.", _0)]
     UndefinedVariable(String),
-    #[fail(display = "invalid operands, expected {}", _0)]
+    #[fail(display = "Invalid operands, expected {}.", _0)]
     InvalidOperands(String),
     #[fail(display = "break")]
     Break,
-    #[fail(display = "can only call functions and classes (at line {})", line)]
+    #[fail(display = "Can only call functions and classes.")]
     InvalidCallee {
         line: usize,
     },
-    #[fail(display = "expected {} argument(s) but got {}", expected, got)]
+    #[fail(display = "Expected {} arguments but got {}.", expected, got)]
     BadArity{
         got: usize,
         expected: usize,
     },
     #[fail(display = "return")]
     Return,
-    #[fail(display = "only instances have properties")]
+    #[fail(display = "Only instances have properties.")]
     BadAccess,
-    #[fail(display = "Superclass must be a class")]
+    #[fail(display = "Only instances have fields.")]
+    BadPropertyAccess,
+    #[fail(display = "Undefined property '{}'.", _0)]
+    UndefinedProperty(String),
+    #[fail(display = "Superclass must be a class.")]
     SuperNotAClass,
 }
 
@@ -184,7 +188,8 @@ impl Eval for Expr {
             Expr::Call(ref inner) => inner.eval(interpreter, env),
             Expr::Get(ref expr, ref property) => {
                 if let Value::Instance(ref mut instance) = expr.eval(interpreter, env)? {
-                    Ok(instance.get(property).unwrap_or(Value::Nil))
+                    instance.get(property)
+                        .ok_or_else(|| RuntimeError::UndefinedProperty(property.clone()))
                 } else {
                     Err(RuntimeError::BadAccess)
                 }
@@ -196,7 +201,7 @@ impl Eval for Expr {
                     instance.set(name, value.clone());
                     Ok(value)
                 } else {
-                    Err(RuntimeError::BadAccess)
+                    Err(RuntimeError::BadPropertyAccess)
                 }
             },
             Expr::This(ref this, _) => {
@@ -218,7 +223,7 @@ impl Eval for Expr {
                     Some(method) => {
                         Ok(method.bind(this).into())
                     },
-                    None => Err(RuntimeError::BadAccess),
+                    None => Err(RuntimeError::UndefinedProperty(method.to_owned())),
                 }
             },
             Expr::Function(ref declaration) => {

@@ -10,33 +10,33 @@ pub enum SyntaxError {
     Missing(String, &'static str),
     #[fail(display = "expected a literal or parenthesized expression")]
     PrimaryFailure,
-    #[fail(display = "invalid assignment target")]
+    #[fail(display = "Invalid assignment target.")]
     InvalidAssignment,
-    #[fail(display = "Cannot have more than 8 arguments")]
+    #[fail(display = "Cannot have more than 8 arguments.")]
     TooManyArguments,
-    #[fail(display = "Cannot have more than 8 parameters")]
+    #[fail(display = "Cannot have more than 8 parameters.")]
     TooManyParameters,
 }
 
 #[derive(Debug, Fail, PartialEq)]
 pub enum ResolveError {
-    #[fail(display =  "'return' outside function")]
+    #[fail(display =  "'return' outside function.")]
     ReturnOutsideFunction,
-    #[fail(display =  "'break' outside loop")]
+    #[fail(display =  "'break' outside loop.")]
     BreakOutsideLoop,
-    #[fail(display = "Cannot read local variable in its own initializer")]
+    #[fail(display = "Cannot read local variable in its own initializer.")]
     InitializerSelfReference,
-    #[fail(display = "Variable with this name already declared in this scope")]
+    #[fail(display = "Variable with this name already declared in this scope.")]
     AlreadyDeclared,
-    #[fail(display = "Cannot use 'this' outside of a class")]
+    #[fail(display = "Cannot use 'this' outside of a class.")]
     ThisOutsideClass,
-    #[fail(display = "Cannot return a value from an initializer")]
+    #[fail(display = "Cannot return a value from an initializer.")]
     ReturnFromInitializer,
-    #[fail(display = "Cannot use 'super' outside of a class")]
+    #[fail(display = "Cannot use 'super' outside of a class.")]
     SuperOutsideClass,
-    #[fail(display = "Cannot use 'super' in a class with no superclass")]
+    #[fail(display = "Cannot use 'super' in a class with no superclass.")]
     SuperInBaseClass,
-    #[fail(display = "Multiple errors found in block")]
+    #[fail(display = "Multiple errors found in block.")]
     BlockErrors(Vec<ResolveError>),
 }
 

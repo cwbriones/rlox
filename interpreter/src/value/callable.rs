@@ -56,7 +56,7 @@ impl Debug for Callable {
         match *self {
             Callable::Function(ref fun) => {
                 if let Some(ref name) = fun.name {
-                    write!(f, "<fn '{}'>", name)
+                    write!(f, "<fn {}>", name)
                 } else {
                     write!(f, "<fn>")
                 }
@@ -219,11 +219,7 @@ impl LoxClass {
         self.methods
             .get(name)
             .map(Clone::clone)
-            .or_else(|| {
-                // FIXME: Do I need to clone?
-                let superclass = self.superclass.clone();
-                superclass.and_then(|sc| sc.method(name))
-            })
+            .or_else(|| self.superclass.as_ref().and_then(|sc| sc.method(name)))
     }
 }
 

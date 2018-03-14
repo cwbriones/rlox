@@ -22,14 +22,19 @@ impl LoxInstance {
     }
 
     pub fn get(&self, field: &str) -> Option<Value> {
-        self.class
-            .method(field)
+        self.fields.borrow()
+            .get(field)
+            .map(Clone::clone)
+            .or_else(|| self.get_method(field))
+    }
+
+    fn get_method(&self, method: &str) -> Option<Value> {
+        self.class.method(method)
             .map(|m| {
                 let this = Value::Instance(self.clone());
                 let bound = m.bind(this);
                 Value::Callable(Callable::Function(bound))
             })
-            .or_else(|| self.fields.borrow().get(field).map(Clone::clone))
     }
 
     pub fn set(&self, field: &str, value: Value) {
@@ -46,6 +51,6 @@ impl PartialEq for LoxInstance {
 
 impl ::std::fmt::Debug for LoxInstance {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-        write!(f, "'{}' instance", self.class.name())
+        write!(f, "{} instance", self.class.name())
     }
 }
