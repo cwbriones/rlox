@@ -4,9 +4,9 @@ pub enum SyntaxError {
     UnexpectedEOF,
     #[fail(display = "unexpected character '{}'", _0)]
     UnexpectedChar(char),
-    #[fail(display = "unterminated string, expected '\"'")]
+    #[fail(display = "Unterminated string.")]
     UnterminatedString,
-    #[fail(display = "expected {} after {}", _0, _1)]
+    #[fail(display = "Expect {} after {}.", _0, _1)]
     Missing(String, &'static str),
     #[fail(display = "Expect expression.")]
     PrimaryFailure,
@@ -20,9 +20,9 @@ pub enum SyntaxError {
 
 #[derive(Debug, Fail, PartialEq)]
 pub enum ResolveError {
-    #[fail(display =  "'return' outside function.")]
+    #[fail(display =  "Cannot return from top-level code.")]
     ReturnOutsideFunction,
-    #[fail(display =  "'break' outside loop.")]
+    #[fail(display =  "Cannot break outside of a loop.")]
     BreakOutsideLoop,
     #[fail(display = "Cannot read local variable in its own initializer.")]
     InitializerSelfReference,

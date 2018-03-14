@@ -8,8 +8,10 @@ pub enum RuntimeError {
     DivideByZero,
     #[fail(display = "Undefined variable '{}'.", _0)]
     UndefinedVariable(String),
-    #[fail(display = "Invalid operands, expected {}.", _0)]
-    InvalidOperands(String),
+    #[fail(display = "Operands must be {}.", _0)]
+    InvalidBinary(&'static str),
+    #[fail(display = "Operand must be a number.")]
+    InvalidUnary,
     #[fail(display = "break")]
     Break,
     #[fail(display = "Can only call functions and classes.")]
@@ -240,7 +242,7 @@ macro_rules! numeric_binary_op (
                 Ok(Value::Number(nlhs $op nrhs))
             },
             _ => {
-                Err(RuntimeError::InvalidOperands("number".into()))
+                Err(RuntimeError::InvalidBinary("numbers"))
             },
         }
     );
@@ -256,7 +258,7 @@ macro_rules! comparison_op (
 					Ok(Value::False)
 				}
             },
-            _ => Err(RuntimeError::InvalidOperands("number".into())),
+            _ => Err(RuntimeError::InvalidBinary("numbers")),
         }
     );
 );
@@ -293,8 +295,11 @@ impl Eval for Binary {
                     let mut res = lhs.clone();
                     res.push_str(&rhs);
                     return Ok(Value::String(res));
-                },
-                (lhs, rhs) => numeric_binary_op!(+, lhs, rhs)
+                }
+                (Value::Number(nlhs), Value::Number(nrhs)) => {
+                    Ok(Value::Number(nlhs + nrhs))
+                }
+                _ => Err(RuntimeError::InvalidBinary("two numbers or two strings"))
             },
             BinaryOperator::Minus => numeric_binary_op!(-, lhs, rhs),
             BinaryOperator::Star => numeric_binary_op!(*, lhs, rhs),
@@ -306,7 +311,7 @@ impl Eval for Binary {
                     (Value::Number(nlhs), Value::Number(nrhs)) => {
                         Ok(Value::Number(nlhs / nrhs))
                     },
-                    _ => Err(RuntimeError::InvalidOperands("numbers".into()))
+                    _ => Err(RuntimeError::InvalidBinary("numbers"))
                 }
             },
             BinaryOperator::GreaterThan => comparison_op!(>, lhs, rhs),
@@ -344,7 +349,7 @@ impl Eval for Unary {
                     Value::Number(n) => {
                         Ok(Value::Number(-1.0 * n))
                     },
-                    _ => Err(RuntimeError::InvalidOperands("numbers".into())) }
+                    _ => Err(RuntimeError::InvalidUnary) }
             },
             UnaryOperator::Bang => {
                 if operand.truthy() {

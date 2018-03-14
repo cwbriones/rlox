@@ -209,7 +209,7 @@ impl<'t> Parser<'t> {
     }
 
     fn function_statement(&mut self) -> Result<FunctionStmt> {
-        let ident = self.expect(TokenType::Identifier, "Expect function name.")?;
+        let ident = self.expect(TokenType::Identifier, "function name")?;
         let decl = self.function_declaration()?;
         Ok(FunctionStmt::new(ident.value, decl))
     }
@@ -236,7 +236,7 @@ impl<'t> Parser<'t> {
                 }
             },
         }
-        self.expect(TokenType::RightParen, "function parameters")?;
+        self.expect(TokenType::RightParen, "parameters")?;
         self.expect(TokenType::LeftBrace, "function parameters")?;
         let block = self.block()?;
         Ok(FunctionDecl::new(parameters, block))
@@ -463,7 +463,7 @@ impl<'t> Parser<'t> {
                 },
                 TokenType::Dot => {
                     self.advance()?;
-                    let name = self.expect(TokenType::Identifier, "dot")?;
+                    let name = self.expect(TokenType::Identifier, "'.'")?;
                     expr = Expr::get(expr, name.value);
                 },
                 _ => break,
@@ -557,22 +557,31 @@ impl<'t> Parser<'t> {
 
     /// Discards tokens until a statement or expression boundary.
     fn synchronize(&mut self) {
-        while let Ok(ty) = self.peek_type() {
-            match ty {
-                TokenType::Semicolon => {
-                    self.advance().unwrap();
-                    return;
+        loop {
+            match self.peek_type() {
+                Ok(ty) => {
+                    match ty {
+                        TokenType::Semicolon => {
+                            self.advance().unwrap();
+                            return;
+                        },
+                        TokenType::Keyword(Keyword::Class)
+                        | TokenType::Keyword(Keyword::Fun)
+                        | TokenType::Keyword(Keyword::Var)
+                        | TokenType::Keyword(Keyword::For)
+                        | TokenType::Keyword(Keyword::If)
+                        | TokenType::Keyword(Keyword::While)
+                        | TokenType::Keyword(Keyword::Return)
+                        | TokenType::Keyword(Keyword::Print)
+                        | TokenType::EOF => return,
+                        _ => { self.advance().unwrap(); }
+                    }
                 },
-                TokenType::Keyword(Keyword::Class)
-                | TokenType::Keyword(Keyword::Fun)
-                | TokenType::Keyword(Keyword::Var)
-                | TokenType::Keyword(Keyword::For)
-                | TokenType::Keyword(Keyword::If)
-                | TokenType::Keyword(Keyword::While)
-                | TokenType::Keyword(Keyword::Return)
-                | TokenType::Keyword(Keyword::Print)
-                | TokenType::EOF => return,
-                _ => { self.advance().unwrap(); },
+                // We want to skip scanning errors as well.
+                //
+                // This will never loop with Err(UnexpectedEOF) because the happy
+                // Ok(EOF) case will be picked up first.
+                Err(_) => { self.advance().unwrap_err(); }
             }
         }
     }
