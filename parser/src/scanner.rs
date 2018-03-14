@@ -1,10 +1,9 @@
-use std::str::CharIndices;
-use std::iter::Peekable;
-use super::ast::{BinaryOperator, UnaryOperator, LogicalOperator};
-
-use super::errors::*;
-
 use std::str;
+use std::str::CharIndices;
+
+use super::ast::{BinaryOperator, UnaryOperator, LogicalOperator};
+use super::peek::Peek2;
+use super::errors::*;
 
 type Result<T> = ::std::result::Result<T, SyntaxError>;
 
@@ -209,7 +208,7 @@ impl str::FromStr for Keyword {
 
 pub(super) struct Scanner<'a> {
     source: &'a str,
-    iter: Peekable<CharIndices<'a>>,
+    iter: Peek2<CharIndices<'a>>,
     current: usize,
     line: usize,
     at_eof: bool,
@@ -219,7 +218,7 @@ impl<'a> Scanner<'a> {
     pub fn new(source: &'a str) -> Self {
         Scanner {
             source: source,
-            iter: source.char_indices().peekable(),
+            iter: Peek2::new(source.char_indices()),
             current: 0,
             line: 1,
             at_eof: false,
@@ -238,6 +237,10 @@ impl<'a> Scanner<'a> {
 
     fn peek(&mut self) -> Option<char> {
         self.iter.peek().map(|&(_, c)| c)
+    }
+
+    fn peek_next(&mut self) -> Option<char> {
+        self.iter.peek_next().map(|&(_, c)| c)
     }
 
     fn token_contents(&mut self, start: usize) -> &'a str {
@@ -327,7 +330,7 @@ impl<'a> Scanner<'a> {
                     Err(err) => return Some(Err(err)),
                 }
             },
-            '0'...'9' => {
+            _ if c.is_digit(10) => {
                 match self.number(start) {
                     Ok(ty) => ty,
                     Err(err) => return Some(Err(err)),
@@ -385,14 +388,15 @@ impl<'a> Scanner<'a> {
     }
 
     fn number(&mut self, start: usize) -> Result<TokenType<'a>> {
-        self.advance_while(|&c| '0' <= c && c <= '9');
+        self.advance_while(|c| c.is_digit(10));
         if let Some('.') = self.peek() {
-            // Look for a fractional part
-            // Consume the '.'
-            self.advance();
-            let count = self.advance_while(|&c| '0' <= c && c <= '9');
-            if count == 0 {
-                return Err(SyntaxError::UnexpectedChar('.'));
+            let cont = self.peek_next().map(|c| c.is_digit(10)).unwrap_or(false);
+            if cont {
+                self.advance();
+                let count = self.advance_while(|&c| c.is_digit(10));
+                if count == 0 {
+                    return Err(SyntaxError::UnexpectedChar('.'));
+                }
             }
         };
         let num = self.token_contents(start).parse::<f64>().unwrap();
@@ -506,9 +510,8 @@ mod tests {
             TokenType::EOF,
         ], &types[..]);
 
-        // We explicitly disallow a decimal point without a fractional part,
-        // but this should not happen during scanning.
-        let tokens = Scanner::new("123.;").collect::<Result<Vec<_>>>().unwrap();
+        // Trailing dot is not an error, but won't be parsed as a number
+        let tokens = Scanner::new("123.").collect::<Result<Vec<_>>>().unwrap();
         let types = tokens.iter().map(|t| t.ty).collect::<Vec<_>>();
         assert_eq!(&[
             TokenType::Number(123.0),

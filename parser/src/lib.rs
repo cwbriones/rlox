@@ -42,6 +42,7 @@ pub mod errors;
 mod ext;
 mod scanner;
 mod resolver;
+mod peek;
 
 type Result<T> = ::std::result::Result<T, SyntaxError>;
 
