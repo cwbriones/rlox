@@ -56,7 +56,7 @@ pub mod dsl {
 pub struct Variable {
     name: String,
     depth: Option<usize>,
-    function_start: usize,
+    function_depth: usize,
 }
 
 pub enum Scope {
@@ -69,7 +69,7 @@ impl Variable {
         Variable {
             name: name.to_owned(),
             depth: None,
-            function_start: 0,
+            function_depth: 0,
         }
     }
 
@@ -77,13 +77,13 @@ impl Variable {
         Variable {
             name: name.to_owned(),
             depth: Some(0),
-            function_start: 1,
+            function_depth: 0,
         }
     }
 
-    pub fn resolve_local(&mut self, depth: usize, function_start: usize) {
+    pub fn resolve_local(&mut self, depth: usize, function_depth: usize) {
         self.depth = Some(depth);
-        self.function_start = function_start;
+        self.function_depth = function_depth;
     }
 
     pub fn name(&self) -> &str {
@@ -100,8 +100,21 @@ impl Variable {
         // If we are reaching out further than our local scope,
         // then it is an upvalue.
         self.depth
-            .map(|d| d > self.function_start)
+            .map(|d| d > self.function_depth)
             .unwrap_or(false)
+    }
+
+    // FIXME: Can we re-structure this resolution so that we do
+    // not need this, and instead can use a variant of Scope?
+    pub fn upvalue_depth(&self) -> Option<usize> {
+        self.depth
+            .and_then(|d| {
+                if d > self.function_depth {
+                    Some(d - self.function_depth)
+                } else {
+                    None
+                }
+            })
     }
 }
 

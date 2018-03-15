@@ -138,6 +138,38 @@ impl<'c> Disassembler<'c> {
         println!("OP_CALL_{}", arity);
     }
 
+    fn close_upvalue(&self) {
+        println!("OP_CLOSE_UPVALUE");
+    }
+
+    fn get_upvalue(&mut self) {
+        let index = self.read_byte();
+        println!("OP_GET_UPVALUE\t{}", index);
+    }
+
+    fn set_upvalue(&mut self) {
+        let index = self.read_byte();
+        println!("OP_SET_UPVALE\t{}", index);
+    }
+
+    fn closure(&mut self) {
+        let value = self.read_constant();
+        let count = value.as_object()
+            .and_then(|o| o.as_function().map(|f| f.upvalue_count()))
+            .expect("closure argument to be function");
+        print!("OP_CLOSURE\t{} ", value);
+        for _ in 0..count {
+            let is_local = self.read_byte() > 0;
+            let index = self.read_byte();
+            if is_local {
+                print!("L{}", index);
+            } else {
+                print!("U{}", index);
+            }
+        }
+        println!();
+    }
+
     fn read_byte(&mut self) -> u8 {
         self.offset += 1;
         self.chunk.as_ref()[self.offset - 1]

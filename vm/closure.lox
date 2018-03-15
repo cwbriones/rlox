@@ -1,0 +1,6 @@
+fun foo() {
+    var a = 1;
+    fun bar() {
+        return a;
+    }
+}

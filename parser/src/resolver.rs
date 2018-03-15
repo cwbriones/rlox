@@ -39,13 +39,14 @@ impl Scopes {
 
     fn resolve_local(&mut self, var: &mut Variable) {
         // We skip the first scope to treat it as global.
-        let start = self.function_start();
         let scopes_iter = self.scopes.iter().skip(1).rev();
+        // How many scopes are within the current function?
+        // This is used to track if a var is being closed over.
+        let function_size = self.scopes.len() - self.function_start() - 1;
 
         for (depth, scope) in scopes_iter.enumerate() {
             if scope.contains_key(var.name()) {
-                debug!("var '{}' resolved to a depth {}", var.name(), depth);
-                var.resolve_local(depth, start);
+                var.resolve_local(depth, function_size);
                 return;
             }
         }
@@ -108,13 +109,15 @@ impl Scopes {
 
     fn begin_function(&mut self, function: FunctionType) {
         self.begin();
-        let scope = self.scopes.len();
+        let scope = self.scopes.len() - 1;
+        debug!("NEW FUNCTION {}", scope);
         self.functions.push((function, scope));
     }
 
     fn end_function(&mut self) {
         self.end();
         self.functions.pop().expect("end_function called at top-level");
+        debug!("END FUNCTION");
     }
 }
 

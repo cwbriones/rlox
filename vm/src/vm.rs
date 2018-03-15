@@ -14,6 +14,7 @@ pub struct VM {
     // to scan the stack to address this at this point.
     gc: Gc,
     globals: HashMap<String, Value>,
+    upvalues: Vec<Value>,
 
     stack: Vec<Value>,
     frames: Vec<CallFrame>,
@@ -117,6 +118,7 @@ impl VM {
             gc,
             globals: HashMap::new(),
             frames: Vec::new(),
+            upvalues: Vec::new(),
         }
     }
 
@@ -326,6 +328,22 @@ impl VM {
             return;
         }
         panic!("Cannot return from top-level.");
+    }
+
+    fn close_upvalue(&mut self) {
+        unimplemented!();
+    }
+
+    fn get_upvalue(&mut self) {
+        unimplemented!();
+    }
+
+    fn set_upvalue(&mut self) {
+        unimplemented!();
+    }
+
+    fn closure(&mut self) {
+        unimplemented!();
     }
 
     fn read_byte(&mut self) -> u8 {

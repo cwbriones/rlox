@@ -11,9 +11,23 @@ pub struct Compiler<'g> {
     states: Vec<CompileState>,
 }
 
+#[derive(Debug)]
+struct Local {
+    pub name: String,
+    pub depth: usize,
+    pub captured: bool,
+}
+
+#[derive(Debug, Clone)]
+struct UpValue {
+    pub index: u8,
+    pub is_local: bool,
+}
+
 struct CompileState {
     line: usize,
-    locals: Vec<(String, usize)>,
+    locals: Vec<Local>,
+    upvalues: Vec<UpValue>,
     function: LoxFunction,
     scope_depth: usize,
     breaks: Vec<usize>,
@@ -22,33 +36,65 @@ struct CompileState {
 impl CompileState {
     fn new(function: LoxFunction, scope_depth: usize) -> Self {
         // Reserve the first local
-        let locals = vec![("".into(), 1)];
+        let locals = vec![Local { name: "".into(), depth: 1, captured: false}];
+        let upvalues = Vec::new();
         CompileState {
             line: 1,
             locals,
+            upvalues,
             function,
             scope_depth,
             breaks: Vec::new(),
         }
     }
 
-    fn resolve_local(&mut self, var: &str, depth: usize) -> u8 {
-        // Find the local variable with this depth
-        let depth = self.scope_depth - depth;
+    fn capture_local(&mut self, var: &str) -> Option<u8> {
+        for (i, local) in self.locals.iter_mut().enumerate().rev() {
+            if local.name == var {
+                local.captured = true;
+                return Some(i as u8);
+            }
+        }
+        None
+    }
 
-        for (i, &(ref v, d)) in self.locals.iter().enumerate() {
-            if v == var && d == depth {
+    fn resolve_local(&mut self, var: &str, depth: usize) -> u8 {
+        for (i, local) in self.locals.iter().enumerate().rev() {
+            if local.name == var {
                 return i as u8;
             }
         }
+
+        // No local was found, assign a new one.
+        let depth = self.scope_depth - depth;
         if self.locals.len() == ::std::u8::MAX as usize {
             panic!("TOO MANY LOCAL VARIABLES");
         }
-        self.locals.push((var.into(), depth));
+        self.locals.push(Local {
+            name: var.into(),
+            depth,
+            captured: false,
+        });
 
         debug!("RESOLVE LOCAL: {} @ {}", var, depth);
         debug!("CURRENT      : {:?}", self.locals);
 
+        (self.locals.len() - 1) as u8
+    }
+
+    fn add_upvalue(&mut self, index: u8, is_local: bool) -> u8 {
+        for (i, upval) in self.upvalues.iter().enumerate() {
+            if upval.index == index && upval.is_local == is_local {
+                return i as u8;
+            }
+        }
+        if self.upvalues.len() == ::std::u8::MAX as usize {
+            panic!("TOO MANY UPVALUES");
+        }
+        self.upvalues.push(UpValue {
+            index,
+            is_local,
+        });
         (self.locals.len() - 1) as u8
     }
 
@@ -61,7 +107,24 @@ impl CompileState {
         // the last callframe is discarded.
         let last = self.scope_depth;
         self.scope_depth -= 1;
-        self.locals.retain(|&(_, d)| d < last);
+        let mut ops = Vec::new();
+        self.locals.retain(|local| {
+            if local.depth < last {
+                return true;
+            }
+            if local.captured {
+                ops.push(Op::CloseUpValue);
+            } else {
+                ops.push(Op::Pop);
+            }
+            false
+        });
+        ops.into_iter().for_each(|op| self.emit(op));
+    }
+
+    // TODO: Unify this with Compiler
+    fn emit(&mut self, op: Op) {
+        self.function.chunk_mut().write(op, self.line);
     }
 
     fn add_break(&mut self, jmp: usize) {
@@ -229,37 +292,11 @@ impl<'g> Compiler<'g> {
                     LogicalOperator::Or => self.or(&*logical.lhs, &*logical.rhs),
                 }
             },
-            ExprKind::Var(ref var) => {
-                match var.scope() {
-                    Scope::Global => {
-                        self.emit(Op::GetGlobal);
-                        let idx = {
-                            let chunk = self.states.last_mut()
-                                .unwrap()
-                                .function
-                                .chunk_mut();
-                            chunk.string_constant(self.gc, var.name())
-                        };
-                        self.emit_byte(idx);
-                    },
-                    Scope::Local(d) => {
-                        let idx = self.state_mut().resolve_local(var.name(), d);
-                        self.emit(Op::GetLocal);
-                        self.emit_byte(idx);
-                    },
-                }
+            ExprKind::Var(ref var) => self.var_get(var),
+            ExprKind::Assign(ref var, ref rhs) => {
+                self.compile_expr(rhs);
+                self.var_set(var);
             }
-            ExprKind::Assign(ref var, ref expr) => {
-                self.compile_expr(expr);
-                match var.scope() {
-                    Scope::Global => self.set_global(var.name()),
-                    Scope::Local(d) => {
-                        let idx = self.state_mut().resolve_local(var.name(), d);
-                        self.emit(Op::SetLocal);
-                        self.emit_byte(idx);
-                    },
-                }
-            },
             ExprKind::Call(ref call) => {
                 self.compile_expr(&call.callee);
                 let arity = call.arguments.len();
@@ -273,6 +310,50 @@ impl<'g> Compiler<'g> {
                 self.emit(op);
             },
             ref e => unimplemented!("{:?}", e),
+        }
+    }
+
+    fn var_get(&mut self, var: &Variable) {
+        if var.is_upvalue() {
+            let idx = self.resolve_upvalue(var.name());
+            self.emit(Op::GetUpValue);
+            self.emit_byte(idx);
+            return;
+        }
+        match var.scope() {
+            Scope::Global => {
+                self.emit(Op::GetGlobal);
+                let idx = {
+                    let chunk = self.states.last_mut()
+                        .unwrap()
+                        .function
+                        .chunk_mut();
+                    chunk.string_constant(self.gc, var.name())
+                };
+                self.emit_byte(idx);
+            },
+            Scope::Local(d) => {
+                let idx = self.state_mut().resolve_local(var.name(), d);
+                self.emit(Op::GetLocal);
+                self.emit_byte(idx);
+            },
+        }
+    }
+
+    fn var_set(&mut self, var: &Variable) {
+        if var.is_upvalue() {
+            let idx = self.resolve_upvalue(var.name());
+            self.emit(Op::SetUpValue);
+            self.emit_byte(idx);
+            return;
+        }
+        match var.scope() {
+            Scope::Global => self.set_global(var.name()),
+            Scope::Local(d) => {
+                let idx = self.state_mut().resolve_local(var.name(), d);
+                self.emit(Op::SetLocal);
+                self.emit_byte(idx);
+            },
         }
     }
 
@@ -326,11 +407,53 @@ impl<'g> Compiler<'g> {
         }
 
         self.state_mut().end_scope();
-        let val = self.end_function();
+        // XXX: There may be a better way to do this, but state will be lost
+        // once `end_function` is called.
+        let upvalues = self.state_mut().upvalues.clone();
 
-        let idx = self.chunk_mut().add_constant(val);
-        self.emit(Op::Constant(idx));
-        self.set_global(name);
+        let value = self.end_function();
+        let idx = self.chunk_mut().add_constant(value);
+        self.emit(Op::Closure);
+        self.emit_byte(idx);
+        for upvalue in upvalues {
+            self.emit_byte(if upvalue.is_local {
+                1
+            } else {
+                0
+            });
+            self.emit_byte(upvalue.index);
+        }
+        self.var_set(&f.var);
+    }
+
+    fn resolve_upvalue(&mut self, name: &str) -> u8 {
+        //
+        // First we walk backwards to find the scope that contains this captured value as a local.
+        //
+        // Once found, we need to mark it as captured so that it is closed over when
+        // it goes out of scope.
+        let end = self.states.len() - 1;
+        let (scope, mut index) =
+            self.states[..end].iter_mut()
+                .enumerate()
+                .rev()
+                .filter_map(|(i, enclosing)| {
+                    enclosing.capture_local(name).map(|local| (i, local))
+                })
+                .next()
+                .expect("upvalue marked during resolution but could not be found");
+
+        // Add the upvalue to the immediately following scope and update the index
+        index = self.states[scope + 1].add_upvalue(index, true);
+        if scope >= self.states.len() - 2 {
+            // If we are only one scope up from the current function, we are done.
+            return index;
+        }
+        // Walk forwards and propagate the upvalue up to our current function
+        for enclosing in &mut self.states[scope + 2..] {
+            index = enclosing.add_upvalue(index, false);
+        }
+        index
     }
 
     fn start_function(&mut self, name: &str, arity: u8, scope: usize) {
@@ -342,16 +465,18 @@ impl<'g> Compiler<'g> {
     fn end_function(&mut self) -> Value {
         self.emit(Op::Nil);
         self.emit(Op::Return);
-        let state = self.states.pop().expect("states to be nonempty");
+        let mut state = self.states.pop().expect("states to be nonempty");
         #[cfg(debug_assertions)]
         {
             self.dissassemble(state.function.chunk());
         }
+        state.function.set_upvalue_count(state.upvalues.len());
         let function = Object::LoxFunction(state.function);
-        self.gc.allocate(function, || {
+        let value = self.gc.allocate(function, || {
             // FIXME: self Cannot be borrowed because GC is also borrowed
             [].iter().cloned()
-        }).into_value()
+        }).into_value();
+        value
     }
 
     fn dissassemble(&self, chunk: &Chunk) {

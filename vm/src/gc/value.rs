@@ -101,6 +101,14 @@ impl Value {
             tag => panic!("unknown singleton {}", tag),
         }
     }
+
+    pub fn as_object(&self) -> Option<ObjectHandle> {
+        if let Variant::Obj(ref o) = self.decode() {
+            Some(*o)
+        } else {
+            None
+        }
+    }
 }
 
 impl Debug for Value {

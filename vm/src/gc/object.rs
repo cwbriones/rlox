@@ -16,13 +16,14 @@ pub struct LoxFunction {
     name: String,
     chunk: Chunk,
     arity: u8,
+    upvalue_count: usize,
 }
 
 impl LoxFunction {
     pub fn new(name: &str, arity: u8) -> Self {
         let name: String = name.into();
         let chunk = Chunk::new(name.clone());
-        LoxFunction { name, arity, chunk }
+        LoxFunction { name, arity, chunk, upvalue_count: 0 }
     }
 
     pub fn name(&self) -> &str {
@@ -36,11 +37,27 @@ impl LoxFunction {
     pub fn chunk_mut(&mut self) -> &mut Chunk {
         &mut self.chunk
     }
+
+    pub fn set_upvalue_count(&mut self, count: usize) {
+        self.upvalue_count = count;
+    }
+
+    pub fn upvalue_count(&self) -> usize {
+        self.upvalue_count
+    }
 }
 
 impl Object {
     pub fn string(string: String) -> Self {
         Object::String(string)
+    }
+
+    pub fn as_function(&self) -> Option<&LoxFunction> {
+        if let Object::LoxFunction(ref f) = *self {
+            Some(f)
+        } else {
+            None
+        }
     }
 
     pub fn is_function(&self) -> bool {
