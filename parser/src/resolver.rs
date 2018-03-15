@@ -5,7 +5,6 @@ use errors::ResolveError;
 
 pub struct Resolver {
     scopes: Scopes,
-    function: Option<FunctionType>,
     class: Option<ClassType>,
     loop_depth: usize,
 }
@@ -27,23 +26,26 @@ type Result = ::std::result::Result<(), ResolveError>;
 
 struct Scopes {
     scopes: Vec<HashMap<String, bool>>,
+    functions: Vec<(FunctionType, usize)>,
 }
 
 impl Scopes {
     pub fn new() -> Self {
         Scopes {
             scopes: vec![HashMap::new()],
+            functions: Vec::new(),
         }
     }
 
     fn resolve_local(&mut self, var: &mut Variable) {
         // We skip the first scope to treat it as global.
+        let start = self.function_start();
         let scopes_iter = self.scopes.iter().skip(1).rev();
 
         for (depth, scope) in scopes_iter.enumerate() {
             if scope.contains_key(var.name()) {
                 debug!("var '{}' resolved to a depth {}", var.name(), depth);
-                var.resolve_local(depth);
+                var.resolve_local(depth, start);
                 return;
             }
         }
@@ -95,14 +97,31 @@ impl Scopes {
         debug!("END SCOPE");
         self.scopes.pop().expect("scopes stack to be nonempty");
     }
-}
 
+    pub fn function(&self) -> Option<FunctionType> {
+        self.functions.last().map(|f| f.0)
+    }
+
+    fn function_start(&self) -> usize {
+        self.functions.last().map(|&(_, d)| d).unwrap_or(0)
+    }
+
+    fn begin_function(&mut self, function: FunctionType) {
+        self.begin();
+        let scope = self.scopes.len();
+        self.functions.push((function, scope));
+    }
+
+    fn end_function(&mut self) {
+        self.end();
+        self.functions.pop().expect("end_function called at top-level");
+    }
+}
 
 impl Resolver {
     pub fn new() -> Self {
         Resolver {
             scopes: Scopes::new(),
-            function: None,
             class: None,
             loop_depth: 0,
         }
@@ -159,7 +178,7 @@ impl Resolver {
                 }
             },
             Stmt::Return(ref mut expr) => {
-                match (self.function, expr) {
+                match (self.scopes.function(), expr) {
                     (Some(FunctionType::Initializer), &mut Some(_)) =>
                         return Err(ResolveError::ReturnFromInitializer),
                     (Some(_), &mut Some(ref mut expr)) => self.resolve_expr(expr)?,
@@ -264,17 +283,13 @@ impl Resolver {
     }
 
     fn resolve_function(&mut self, declaration: &mut FunctionDecl, function_type: FunctionType) -> Result {
-        let enclosing_function = self.function.take();
-        self.function = Some(function_type);
-
-        self.scopes.begin();
+        self.scopes.begin_function(function_type);
         for param in &declaration.parameters {
             self.scopes.init(param.name())?;
         }
         self.resolve(&mut declaration.body)?;
-        self.scopes.end();
+        self.scopes.end_function();
 
-        self.function = enclosing_function;
         Ok(())
     }
 }

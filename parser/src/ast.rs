@@ -56,11 +56,12 @@ pub mod dsl {
 pub struct Variable {
     name: String,
     depth: Option<usize>,
+    function_start: usize,
 }
 
 pub enum Scope {
     Global,
-    Local(usize)
+    Local(usize),
 }
 
 impl Variable {
@@ -68,6 +69,7 @@ impl Variable {
         Variable {
             name: name.to_owned(),
             depth: None,
+            function_start: 0,
         }
     }
 
@@ -75,11 +77,13 @@ impl Variable {
         Variable {
             name: name.to_owned(),
             depth: Some(0),
+            function_start: 1,
         }
     }
 
-    pub fn resolve_local(&mut self, depth: usize) {
+    pub fn resolve_local(&mut self, depth: usize, function_start: usize) {
         self.depth = Some(depth);
+        self.function_start = function_start;
     }
 
     pub fn name(&self) -> &str {
@@ -90,6 +94,14 @@ impl Variable {
         self.depth
             .map(Scope::Local)
             .unwrap_or(Scope::Global)
+    }
+
+    pub fn is_upvalue(&self) -> bool {
+        // If we are reaching out further than our local scope,
+        // then it is an upvalue.
+        self.depth
+            .map(|d| d > self.function_start)
+            .unwrap_or(false)
     }
 }
 
