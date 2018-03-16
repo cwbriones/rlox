@@ -59,6 +59,7 @@ pub struct Variable {
     function_depth: usize,
 }
 
+#[derive(Debug)]
 pub enum Scope {
     Global,
     Local(usize),
@@ -158,7 +159,7 @@ pub struct FunctionStmt {
 impl FunctionStmt {
     pub fn new(name: &str, declaration: FunctionDecl) -> Self {
         FunctionStmt {
-            var: Variable::new_local(name),
+            var: Variable::new_global(name),
             declaration: Rc::new(RefCell::new(declaration)),
         }
     }
@@ -196,7 +197,7 @@ impl Stmt {
     }
 
     pub(super) fn class(name: &str, methods: Vec<FunctionStmt>, class_methods: Vec<FunctionStmt>, superclass: Option<Variable>) -> Stmt {
-        let var = Variable::new_local(name);
+        let var = Variable::new_global(name);
         Stmt::Class(Class {
             var,
             methods,

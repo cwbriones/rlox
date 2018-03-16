@@ -10,6 +10,8 @@ use std::ops::DerefMut;
 pub enum Object {
     String(String),
     LoxFunction(LoxFunction),
+    LoxClosure(LoxClosure),
+    LoxUpValue(LoxUpValue),
 }
 
 pub struct LoxFunction {
@@ -47,6 +49,89 @@ impl LoxFunction {
     }
 }
 
+pub struct LoxClosure {
+    function: ObjectHandle,
+    upvalues: Vec<ObjectHandle>,
+}
+
+impl LoxClosure {
+    pub fn new(function: ObjectHandle, upvalues: Vec<ObjectHandle>) -> Self {
+        LoxClosure {
+            function,
+            upvalues,
+        }
+    }
+
+    pub fn function(&self) -> ObjectHandle {
+        self.function
+    }
+
+    pub fn upvalue_count(&self) -> usize {
+        self.upvalues.len()
+    }
+
+    pub fn get(&self, idx: usize) -> ObjectHandle {
+        self.upvalues[idx]
+    }
+
+    pub fn get_in(&self, idx: usize) -> Value {
+        // ugh...
+        if let Object::LoxUpValue(ref up) = *self.upvalues[idx] {
+            return up.value;
+        }
+        panic!("closure should only contain upvalues")
+    }
+
+    pub fn set(&mut self, idx: usize, upvalue: ObjectHandle) {
+        self.upvalues[idx] = upvalue;
+    }
+
+    pub fn set_in(&mut self, idx: usize, value: Value) {
+        if let Object::LoxUpValue(ref mut up) = *self.upvalues[idx] {
+            up.value = value;
+            return;
+        }
+        panic!("closure should only contain upvalues")
+    }
+}
+
+pub struct LoxUpValue {
+    value: Value,
+    local: *mut Value,
+    closed: bool,
+}
+
+impl LoxUpValue {
+    pub fn new(local: *mut Value) -> Self {
+        LoxUpValue {
+            value: Value::nil(),
+            local,
+            closed: false,
+        }
+    }
+
+    pub fn is(&self, other: *mut Value) -> bool {
+        other == self.local
+    }
+
+    pub fn local(&self) -> *mut Value {
+        self.local
+    }
+
+    pub unsafe fn close(&mut self) {
+        self.closed = true;
+        self.value = *self.local;
+    }
+
+    pub unsafe fn get(&self) -> Value {
+        if self.closed {
+            self.value
+        } else {
+            *self.local
+        }
+    }
+}
+
 impl Object {
     pub fn string(string: String) -> Self {
         Object::String(string)
@@ -60,8 +145,8 @@ impl Object {
         }
     }
 
-    pub fn is_function(&self) -> bool {
-        if let Object::LoxFunction(_) = *self {
+    pub fn is_closure(&self) -> bool {
+        if let Object::LoxClosure(_) = *self {
             true
         } else {
             false
@@ -74,6 +159,8 @@ impl Debug for Object {
         match *self {
             Object::String(ref s) => write!(f, "{:?}", s),
             Object::LoxFunction(ref fun) => write!(f, "<function: {:?}>", fun.name),
+            Object::LoxClosure(ref cl) => write!(f, "<closure {:?}>", cl.function),
+            Object::LoxUpValue(ref up) => write!(f, "{:?}", up.value),
         }
     }
 }
@@ -83,6 +170,8 @@ impl Display for Object {
         match *self {
             Object::String(ref s) => write!(f, "{}", s),
             Object::LoxFunction(ref fun) => write!(f, "<function {:?}>", fun.name),
+            Object::LoxClosure(ref cl) => write!(f, "<closure {:?}>", cl.function),
+            Object::LoxUpValue(ref up) => write!(f, "{}", up.value),
         }
     }
 }
@@ -109,8 +198,20 @@ impl ObjectHandle {
         self.ptr.mark();
     }
 
-    pub fn is_marked(&self) -> bool {
-        self.ptr.is_marked()
+    pub fn trace(&mut self) {
+        if self.ptr.is_marked() {
+            return;
+        }
+        match **self {
+            Object::LoxClosure(ref mut cl) => {
+                cl.function.trace();
+                cl.upvalues.iter_mut().for_each(|o| o.trace());
+            }
+            Object::LoxUpValue(ref mut up) => {
+                up.value.as_object().map(|mut o| o.trace());
+            }
+            _ => {},
+        }
     }
 }
 

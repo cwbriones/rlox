@@ -106,28 +106,28 @@ impl Chunk {
         Constants::new(self.constants.iter())
     }
 
-    pub fn read_byte(&mut self, idx: usize) -> u8 {
+    pub fn read_byte(&self, idx: usize) -> u8 {
         self.code[idx]
     }
 
-    pub fn read_u16(&mut self, idx: usize) -> u16 {
+    pub fn read_u16(&self, idx: usize) -> u16 {
         let mut t = 0u16;
         let size = ::std::mem::size_of::<u16>();
         unsafe {
             ::std::ptr::copy_nonoverlapping(
-                &mut self.code[idx],
+                &self.code[idx],
                 &mut t as *mut u16 as *mut u8,
                 size);
         }
         t.to_le()
     }
 
-    pub fn read_u64(&mut self, idx: usize) -> u64 {
+    pub fn read_u64(&self, idx: usize) -> u64 {
         let mut t = 0u64;
         let size = ::std::mem::size_of::<u64>();
         unsafe {
             ::std::ptr::copy_nonoverlapping(
-                &mut self.code[idx],
+                &self.code[idx],
                 &mut t as *mut u64 as *mut u8,
                 size);
         }

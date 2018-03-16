@@ -4,35 +4,39 @@ use chunk::Chunk;
 use compile::Compiler;
 use gc::Gc;
 use gc::object::Object;
+use gc::object::LoxClosure;
 use gc::object::ObjectHandle;
+use gc::object::LoxUpValue;
 use gc::value::Value;
 use gc::value::Variant;
 use parser::ast::Stmt;
+
+const STACK_SIZE: usize = 4096;
 
 pub struct VM {
     // FIXME: Local variables are not currently rooted properly, we will need
     // to scan the stack to address this at this point.
     gc: Gc,
     globals: HashMap<String, Value>,
-    upvalues: Vec<Value>,
+    open_upvalues: Vec<(ObjectHandle, usize)>,
 
     stack: Vec<Value>,
     frames: Vec<CallFrame>,
 }
 
 pub struct CallFrame {
-    function: ObjectHandle,
+    closure: ObjectHandle,
     ip: usize,
     stack_start: usize,
 }
 
 impl CallFrame {
-    pub fn new(function: ObjectHandle, stack_start: usize) -> Self {
-        if !function.is_function() {
-            panic!("Callframe must be constructed from a function");
+    pub fn new(closure: ObjectHandle, stack_start: usize) -> Self {
+        if !closure.is_closure() {
+            panic!("Callframe must be constructed from a closure");
         }
         CallFrame {
-            function,
+            closure,
             ip: 0,
             stack_start,
         }
@@ -41,40 +45,50 @@ impl CallFrame {
     pub fn read_byte(&mut self) -> u8 {
         let ip = self.ip;
         self.ip += 1;
-        self.chunk_mut().read_byte(ip)
+        self.with_chunk(|c| c.read_byte(ip))
     }
 
     pub fn read_u16(&mut self) -> u16 {
         let ip = self.ip;
         self.ip += 2;
-        self.chunk_mut().read_u16(ip)
+        self.with_chunk(|c| c.read_u16(ip))
     }
 
     pub fn read_u64(&mut self) -> u64 {
         let ip = self.ip;
         self.ip += 8;
-        self.chunk_mut().read_u64(ip)
+        self.with_chunk(|c| c.read_u64(ip))
+    }
+
+    pub fn read_constant_at(&mut self, idx: u8) -> Value {
+        self.with_chunk(|c| c.get_constant(idx).unwrap().clone())
     }
 
     pub fn read_constant(&mut self) -> Value {
         let idx = self.read_byte();
-        *self.chunk_mut().get_constant(idx).unwrap()
+        self.with_chunk(|c| c.get_constant(idx).unwrap().clone())
     }
 
-    pub fn chunk(&self) -> &Chunk {
-        if let Object::LoxFunction(ref f) = *self.function {
-            f.chunk()
-        } else {
-            unreachable!();
+    fn with_closure<F, T>(&mut self, fun: F) -> T
+        where
+            F: FnOnce(&mut LoxClosure) -> T
+    {
+        if let Object::LoxClosure(ref mut cl) = *self.closure {
+            return fun(cl);
         }
+        panic!("should always refer to a closure");
     }
 
-    pub fn chunk_mut(&mut self) -> &mut Chunk {
-        if let Object::LoxFunction(ref mut f) = *self.function {
-            f.chunk_mut()
-        } else {
-            unreachable!();
+    pub fn with_chunk<F, T>(&self, fun: F) -> T
+        where
+            F: FnOnce(&Chunk) -> T
+    {
+        if let Object::LoxClosure(ref closure) = *self.closure {
+            if let Object::LoxFunction(ref f) = *closure.function() {
+                return fun(f.chunk());
+            }
         }
+        panic!("should always refer to a closure");
     }
 }
 
@@ -114,11 +128,11 @@ impl RuntimeError {
 impl VM {
     pub fn new(gc: Gc) -> Self {
         VM {
-            stack: Vec::new(),
+            stack: Vec::with_capacity(STACK_SIZE),
             gc,
             globals: HashMap::new(),
-            frames: Vec::new(),
-            upvalues: Vec::new(),
+            frames: Vec::with_capacity(256),
+            open_upvalues: Vec::with_capacity(16),
         }
     }
 
@@ -127,7 +141,9 @@ impl VM {
             let compiler = Compiler::new(&mut self.gc);
             compiler.compile(stmts)
         };
-        self.push(function);
+        let closure = LoxClosure::new(function, Vec::new());
+        let value = self.allocate(Object::LoxClosure(closure)).into_value();
+        self.push(value);
         self.call(0);
         self.run();
     }
@@ -140,7 +156,7 @@ impl VM {
     }
 
     fn constant(&mut self, idx: u8) {
-        let val = *self.frame_mut().chunk_mut().get_constant(idx).unwrap();
+        let val = self.frame_mut().read_constant_at(idx);
         self.push(val);
     }
 
@@ -186,6 +202,7 @@ impl VM {
                 self.runtime_error(RuntimeError::DivideByZero);
             }
             self.push((a/b).into());
+            return;
         }
         self.runtime_error(RuntimeError::ArgumentNotANumber);
     }
@@ -253,9 +270,8 @@ impl VM {
 
         if let Variant::Obj(h) = val.decode() {
             if let Object::String(ref s) = *h {
-                let lhs = self.pop();
+                let lhs = self.peek();
                 self.globals.insert(s.clone(), lhs);
-                self.push(lhs);
                 return;
             }
         }
@@ -309,9 +325,9 @@ impl VM {
         let stack_start = last - (arity + 1) as usize;
         let callee = self.stack[stack_start];
 
-        // ensure callee is a function
+        // ensure callee is a closure
         match callee.decode() {
-            Variant::Obj(o) if o.is_function() => {
+            Variant::Obj(o) if o.is_closure() => {
                 let frame = CallFrame::new(o, stack_start);
                 self.frames.push(frame);
             }
@@ -320,6 +336,7 @@ impl VM {
     }
 
     fn ret(&mut self) {
+        self.close_upvalues();
         if let Some(frame) = self.frames.pop() {
             let val = self.pop(); // return value
             // Remove all arguments off the stack
@@ -331,19 +348,82 @@ impl VM {
     }
 
     fn close_upvalue(&mut self) {
-        unimplemented!();
+        let last = self.stack.len() - 1;
+        self.capture_upvalue(last);
+        self.pop();
     }
 
     fn get_upvalue(&mut self) {
-        unimplemented!();
+        let idx = self.frame_mut().read_byte();
+        let val = self.frame_mut().with_closure(|cl| cl.get_in(idx as usize));
+        self.push(val);
     }
 
     fn set_upvalue(&mut self) {
-        unimplemented!();
+        let val = self.peek();
+        let idx = self.frame_mut().read_byte();
+        self.frame_mut().with_closure(|cl| cl.set_in(idx as usize, val));
     }
 
     fn closure(&mut self) {
-        unimplemented!();
+        let value = self.frame_mut().read_constant();
+        if let Variant::Obj(o) = value.decode() {
+            let f = o.as_function().expect("closure argument to be function");
+            let count = f.upvalue_count();
+            let mut upvalues = Vec::new();
+            for i in 0..count {
+                let is_local = self.read_byte() > 0;
+                let idx = self.read_byte() as usize;
+                if is_local {
+                    let upvalue = self.capture_upvalue(idx);
+                    upvalues.push(upvalue);
+                } else {
+                    let upvalue = self.frame_mut().with_closure(|c| c.get(idx));
+                    upvalues.push(upvalue);
+                }
+            }
+            let mut closure = LoxClosure::new(o.clone(), upvalues);
+            let val = self.allocate(Object::LoxClosure(closure)).into_value();
+            self.push(val);
+            return;
+        }
+        panic!("closure argument should be a function");
+    }
+
+    fn capture_upvalue(&mut self, idx: usize) -> ObjectHandle {
+        let start = self.frame().stack_start;
+        let local = &self.stack[start + idx] as *const _ as *mut _;
+        let matching = self.open_upvalues.iter().rev().find(|&&(o, _)| {
+            if let Object::LoxUpValue(ref o) = *o {
+                o.is(local)
+            } else {
+                false
+            }
+        })
+        .cloned()
+        .map(|t| t.0);
+
+        matching.unwrap_or_else(|| {
+            let upvalue = LoxUpValue::new(local);
+            let val = self.allocate(Object::LoxUpValue(upvalue));
+            self.open_upvalues.push((val, self.frames.len()));
+            val
+        })
+    }
+
+    fn close_upvalues(&mut self) {
+        let depth = self.frames.len();
+        let mut open_upvalues = Vec::with_capacity(self.open_upvalues.len());
+        for &mut (ref mut value, d) in &mut self.open_upvalues {
+            if d == depth {
+                if let Object::LoxUpValue(ref mut up) = **value {
+                    unsafe { up.close(); }
+                }
+            } else {
+                open_upvalues.push((value.clone(), d));
+            }
+        }
+        self.open_upvalues = open_upvalues;
     }
 
     fn read_byte(&mut self) -> u8 {
@@ -355,6 +435,11 @@ impl VM {
     }
 
     fn push(&mut self, value: Value) {
+        // It is important the stack never allocate so that open upvalues don't hold
+        // dangling local references.
+        if self.stack.len() == STACK_SIZE {
+            panic!("stack overflow.");
+        }
         self.stack.push(value);
     }
 
@@ -371,10 +456,27 @@ impl VM {
     fn runtime_error(&self, err: RuntimeError) {
         eprintln!("[ERROR]: {}", err.cause());
         for frame in self.frames.iter().rev() {
-             let name = frame.chunk().name();
-             eprintln!("         in {}", name);
+            let ip = frame.ip;
+            frame.with_chunk(|chunk| {
+                let name = chunk.name();
+                let line = chunk.line(ip);
+                eprintln!("         at [line {}] in {}", line, name);
+            });
         }
         ::std::process::exit(1);
+    }
+
+    /// 
+    /// GC wrapper that handles rooting.
+    ///
+    fn allocate(&mut self, object: Object) -> ObjectHandle {
+        // Root everything on the stack as well as all closures in the current
+        // set of callframes.
+        let frame_iter = self.frames.iter().map(|f| f.closure.into_value());
+        let upvalue_iter = self.open_upvalues.iter().map(|&(o, _)| o.into_value());
+        let roots = self.stack.iter().cloned().chain(frame_iter).chain(upvalue_iter);
+
+        self.gc.allocate(object, || roots)
     }
 }
 
