@@ -77,7 +77,7 @@ impl LoxClosure {
     pub fn get_in(&self, idx: usize) -> Value {
         // ugh...
         if let Object::LoxUpValue(ref up) = *self.upvalues[idx] {
-            return up.value;
+            return unsafe { up.get() };
         }
         panic!("closure should only contain upvalues")
     }
@@ -160,7 +160,7 @@ impl Debug for Object {
             Object::String(ref s) => write!(f, "{:?}", s),
             Object::LoxFunction(ref fun) => write!(f, "<function: {:?}>", fun.name),
             Object::LoxClosure(ref cl) => write!(f, "<closure {:?}>", cl.function),
-            Object::LoxUpValue(ref up) => write!(f, "{:?}", up.value),
+            Object::LoxUpValue(ref up) => write!(f, "<upvalue [{:?}]>", up.value),
         }
     }
 }
@@ -209,6 +209,11 @@ impl ObjectHandle {
             }
             Object::LoxUpValue(ref mut up) => {
                 up.value.as_object().map(|mut o| o.trace());
+            }
+            Object::LoxFunction(ref mut f) => {
+                f.chunk.constants()
+                    .filter_map(|v| v.as_object())
+                    .for_each(|ref mut o| o.trace());
             }
             _ => {},
         }

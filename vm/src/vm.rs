@@ -18,7 +18,7 @@ pub struct VM {
     // to scan the stack to address this at this point.
     gc: Gc,
     globals: HashMap<String, Value>,
-    open_upvalues: Vec<(ObjectHandle, usize)>,
+    open_upvalues: Vec<ObjectHandle>,
 
     stack: Vec<Value>,
     frames: Vec<CallFrame>,
@@ -118,7 +118,7 @@ impl RuntimeError {
     pub fn cause(&self) -> &'static str {
         match *self {
             RuntimeError::DivideByZero => "divide by zero",
-            RuntimeError::ArgumentNotANumber => "argument is not a number",
+            RuntimeError::ArgumentNotANumber => "Operands must be numbers",
             RuntimeError::ArgumentNotAString => "argument is not a string",
             RuntimeError::BadCall => "value is not callable",
         }
@@ -265,9 +265,20 @@ impl VM {
         panic!("GET_GLOBAL constant was not a string");
     }
 
+    fn define_global(&mut self) {
+        let val = self.frame_mut().read_constant();
+        if let Variant::Obj(h) = val.decode() {
+            if let Object::String(ref s) = *h {
+                let lhs = self.pop();
+                self.globals.insert(s.clone(), lhs);
+                return;
+            }
+        }
+        panic!("DEFINE_GLOBAL constant was not a string");
+    }
+
     fn set_global(&mut self) {
         let val = self.frame_mut().read_constant();
-
         if let Variant::Obj(h) = val.decode() {
             if let Object::String(ref s) = *h {
                 let lhs = self.peek();
@@ -331,14 +342,18 @@ impl VM {
                 let frame = CallFrame::new(o, stack_start);
                 self.frames.push(frame);
             }
-            _ => self.runtime_error(RuntimeError::BadCall)
+            _ => {
+                self.runtime_error(RuntimeError::BadCall)
+            }
         }
     }
 
     fn ret(&mut self) {
-        self.close_upvalues();
         if let Some(frame) = self.frames.pop() {
             let val = self.pop(); // return value
+            if frame.stack_start < self.stack.len() {
+                self.close_upvalues(frame.stack_start);
+            }
             // Remove all arguments off the stack
             self.stack.truncate(frame.stack_start);
             self.push(val);
@@ -348,8 +363,8 @@ impl VM {
     }
 
     fn close_upvalue(&mut self) {
-        let last = self.stack.len() - 1;
-        self.capture_upvalue(last);
+        let end = self.stack.len() - 1;
+        self.close_upvalues(end);
         self.pop();
     }
 
@@ -371,13 +386,15 @@ impl VM {
             let f = o.as_function().expect("closure argument to be function");
             let count = f.upvalue_count();
             let mut upvalues = Vec::new();
-            for i in 0..count {
+            for _ in 0..count {
                 let is_local = self.read_byte() > 0;
                 let idx = self.read_byte() as usize;
                 if is_local {
+                    // Capture from the local scope
                     let upvalue = self.capture_upvalue(idx);
                     upvalues.push(upvalue);
                 } else {
+                    // Re-use from the current closure
                     let upvalue = self.frame_mut().with_closure(|c| c.get(idx));
                     upvalues.push(upvalue);
                 }
@@ -393,35 +410,34 @@ impl VM {
     fn capture_upvalue(&mut self, idx: usize) -> ObjectHandle {
         let start = self.frame().stack_start;
         let local = &self.stack[start + idx] as *const _ as *mut _;
-        let matching = self.open_upvalues.iter().rev().find(|&&(o, _)| {
+        let matching = self.open_upvalues.iter().rev().find(|&&o| {
             if let Object::LoxUpValue(ref o) = *o {
                 o.is(local)
             } else {
                 false
             }
         })
-        .cloned()
-        .map(|t| t.0);
+        .cloned();
 
         matching.unwrap_or_else(|| {
             let upvalue = LoxUpValue::new(local);
             let val = self.allocate(Object::LoxUpValue(upvalue));
-            self.open_upvalues.push((val, self.frames.len()));
+            self.open_upvalues.push(val);
             val
         })
     }
 
-    fn close_upvalues(&mut self) {
-        let depth = self.frames.len();
+    fn close_upvalues(&mut self, end: usize) {
+        let stack_end = &self.stack[end] as *const _ as *mut Value;
         let mut open_upvalues = Vec::with_capacity(self.open_upvalues.len());
-        for &mut (ref mut value, d) in &mut self.open_upvalues {
-            if d == depth {
-                if let Object::LoxUpValue(ref mut up) = **value {
+        for handle in &mut self.open_upvalues {
+            if let Object::LoxUpValue(ref mut up) = **handle {
+                if up.local() >= stack_end {
                     unsafe { up.close(); }
+                    continue;
                 }
-            } else {
-                open_upvalues.push((value.clone(), d));
             }
+            open_upvalues.push(handle.clone());
         }
         self.open_upvalues = open_upvalues;
     }
@@ -454,7 +470,7 @@ impl VM {
     }
 
     fn runtime_error(&self, err: RuntimeError) {
-        eprintln!("[ERROR]: {}", err.cause());
+        eprintln!("[error]: {}.", err.cause());
         for frame in self.frames.iter().rev() {
             let ip = frame.ip;
             frame.with_chunk(|chunk| {
@@ -466,17 +482,21 @@ impl VM {
         ::std::process::exit(1);
     }
 
-    /// 
+    ///
     /// GC wrapper that handles rooting.
     ///
     fn allocate(&mut self, object: Object) -> ObjectHandle {
         // Root everything on the stack as well as all closures in the current
-        // set of callframes.
+        // set of callframes, upvalues in scope, and globals.
         let frame_iter = self.frames.iter().map(|f| f.closure.into_value());
-        let upvalue_iter = self.open_upvalues.iter().map(|&(o, _)| o.into_value());
-        let roots = self.stack.iter().cloned().chain(frame_iter).chain(upvalue_iter);
+        let upvalue_iter = self.open_upvalues.iter().map(|o| o.into_value());
+        let globals_iter = self.globals.values().cloned();
+        let stack_iter = self.stack.iter().cloned();
+        let roots = stack_iter.chain(frame_iter).chain(upvalue_iter).chain(globals_iter);
 
-        self.gc.allocate(object, || roots)
+        self.gc.allocate(object, || {
+            roots
+        })
     }
 }
 

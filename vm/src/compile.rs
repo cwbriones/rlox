@@ -36,7 +36,7 @@ struct CompileState {
 impl CompileState {
     fn new(function: LoxFunction, scope_depth: usize) -> Self {
         // Reserve the first local
-        let locals = vec![Local { name: "".into(), depth: 1, captured: false}];
+        let locals = vec![Local { name: "".into(), depth: 0, captured: false}];
         let upvalues = Vec::new();
         CompileState {
             line: 1,
@@ -95,7 +95,7 @@ impl CompileState {
             index,
             is_local,
         });
-        (self.locals.len() - 1) as u8
+        (self.upvalues.len() - 1) as u8
     }
 
     fn begin_scope(&mut self) {
@@ -103,8 +103,6 @@ impl CompileState {
     }
 
     fn end_scope(&mut self) {
-        // We do not need to emit pops because the vm will clear the stack when
-        // the last callframe is discarded.
         let last = self.scope_depth;
         self.scope_depth -= 1;
         let mut ops = Vec::new();
@@ -119,7 +117,7 @@ impl CompileState {
             }
             false
         });
-        ops.into_iter().for_each(|op| self.emit(op));
+        ops.into_iter().rev().for_each(|op| self.emit(op));
     }
 
     // TODO: Unify this with Compiler
@@ -223,24 +221,7 @@ impl<'g> Compiler<'g> {
             }
             Stmt::Var(ref var, ref init) => {
                 self.compile_expr(init);
-                match var.scope() {
-                    Scope::Global => {
-                        self.emit(Op::SetGlobal);
-                        let idx = {
-                            let chunk = self.states.last_mut()
-                                .unwrap()
-                                .function
-                                .chunk_mut();
-                            chunk.string_constant(self.gc, var.name())
-                        };
-                        self.emit_byte(idx);
-                    },
-                    Scope::Local(d) => {
-                        let idx = self.state_mut().resolve_local(var.name(), d);
-                        self.emit(Op::SetLocal);
-                        self.emit_byte(idx);
-                    },
-                }
+                self.var_define(var);
             }
             ref s => unimplemented!("{:?}", s),
         }
@@ -284,10 +265,7 @@ impl<'g> Compiler<'g> {
                 match unary.operator {
                     UnaryOperator::Minus => self.emit(Op::Negate),
                     UnaryOperator::Bang  => self.emit(Op::Not),
-                }
-            },
-            ExprKind::Logical(ref logical) => {
-                match logical.operator {
+                } }, ExprKind::Logical(ref logical) => { match logical.operator {
                     LogicalOperator::And => self.and(&*logical.lhs, &*logical.rhs),
                     LogicalOperator::Or => self.or(&*logical.lhs, &*logical.rhs),
                 }
@@ -295,7 +273,20 @@ impl<'g> Compiler<'g> {
             ExprKind::Var(ref var) => self.var_get(var),
             ExprKind::Assign(ref var, ref rhs) => {
                 self.compile_expr(rhs);
-                self.var_set(var);
+                if var.is_upvalue() {
+                    let idx = self.resolve_upvalue(var.name());
+                    self.emit(Op::SetUpValue);
+                    self.emit_byte(idx);
+                    return;
+                }
+                match var.scope() {
+                    Scope::Global => self.set_global(var.name()),
+                    Scope::Local(d) => {
+                        let idx = self.state_mut().resolve_local(var.name(), d);
+                        self.emit(Op::SetLocal);
+                        self.emit_byte(idx);
+                    },
+                }
             }
             ExprKind::Call(ref call) => {
                 self.compile_expr(&call.callee);
@@ -340,19 +331,22 @@ impl<'g> Compiler<'g> {
         }
     }
 
-    fn var_set(&mut self, var: &Variable) {
-        if var.is_upvalue() {
-            let idx = self.resolve_upvalue(var.name());
-            self.emit(Op::SetUpValue);
-            self.emit_byte(idx);
-            return;
-        }
+    fn var_define(&mut self, var: &Variable) {
         match var.scope() {
-            Scope::Global => self.set_global(var.name()),
-            Scope::Local(d) => {
-                let idx = self.state_mut().resolve_local(var.name(), d);
-                self.emit(Op::SetLocal);
+            Scope::Global => {
+                self.emit(Op::DefineGlobal);
+                let idx = {
+                    let chunk = self.states.last_mut()
+                        .unwrap()
+                        .function
+                        .chunk_mut();
+                    chunk.string_constant(self.gc, var.name())
+                };
                 self.emit_byte(idx);
+            },
+            Scope::Local(d) => {
+                // Declarations do not need to call have a SET_LOCAL instruction.
+                self.state_mut().resolve_local(var.name(), d);
             },
         }
     }
@@ -423,7 +417,7 @@ impl<'g> Compiler<'g> {
             });
             self.emit_byte(upvalue.index);
         }
-        self.var_set(&f.var);
+        self.var_define(&f.var);
     }
 
     fn resolve_upvalue(&mut self, name: &str) -> u8 {
