@@ -171,7 +171,7 @@ pub enum Op {
     GetLocal,
     SetLocal,
     GetGlobal,
-    // DefineGlobal,
+    DefineGlobal,
     SetGlobal,
     GetUpValue,
     SetUpValue,
@@ -253,6 +253,7 @@ impl Op {
             Op::GetUpValue => buf.push(0x21),
             Op::SetUpValue => buf.push(0x22),
             Op::Closure => buf.push(0x23),
+            Op::DefineGlobal => buf.push(0x24),
         }
     }
 }
@@ -291,6 +292,7 @@ macro_rules! decode_op {
             0x21 => $this.get_upvalue(),
             0x22 => $this.set_upvalue(),
             0x23 => $this.closure(),
+            0x24 => $this.define_global(),
             _ => {
                 panic!("Unknown op {}", $op);
             }

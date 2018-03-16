@@ -154,6 +154,7 @@ impl Resolver {
             Stmt::Function(ref mut function) => {
                 // Define the function itself
                 self.scopes.init(function.var.name())?;
+                self.scopes.resolve_local(&mut function.var);
                 let mut declaration = function.declaration.borrow_mut();
                 self.resolve_function(&mut *declaration, FunctionType::Function)?;
             },

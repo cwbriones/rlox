@@ -86,8 +86,9 @@ impl<'c> Disassembler<'c> {
         println!("OP_SET_GLOBAL\t{:?}", val);
     }
 
-    fn define_global(&self) {
-        println!("OP_DEFINE_GLOBAL");
+    fn define_global(&mut self) {
+        let val = self.read_constant();
+        println!("OP_DEFINE_GLOBAL\t{:?}", val);
     }
 
     fn get_local(&mut self) {
