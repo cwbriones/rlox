@@ -39,6 +39,25 @@ impl Chunk {
         self.code[idx] = byte;
     }
 
+    pub fn write_u64(&mut self, val: u64) {
+        let b1 = (val & 0xff) as u8;
+        let b2 = ((val >> 8) & 0xff) as u8;
+        let b3 = ((val >> 16) & 0xff) as u8;
+        let b4 = ((val >> 24) & 0xff) as u8;
+        let b5 = ((val >> 32) & 0xff) as u8;
+        let b6 = ((val >> 40) & 0xff) as u8;
+        let b7 = ((val >> 48) & 0xff) as u8;
+        let b8 = ((val >> 56) & 0xff) as u8;
+        self.write_byte(b1);
+        self.write_byte(b2);
+        self.write_byte(b3);
+        self.write_byte(b4);
+        self.write_byte(b5);
+        self.write_byte(b6);
+        self.write_byte(b7);
+        self.write_byte(b8);
+    }
+
     fn add_line(&mut self, line: usize) {
         match self.lines.last().cloned() {
             Some(last) if last.line >= line => return,
@@ -64,6 +83,11 @@ impl Chunk {
     }
 
     pub fn add_constant(&mut self, constant: Value) -> u8 {
+        for (i, c) in self.constants.iter().enumerate() {
+            if *c == constant {
+                return i as u8;
+            }
+        }
         if self.constants.len() == 256 {
             panic!("A chunk cannot have more than 256 constants");
         }
