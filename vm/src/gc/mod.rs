@@ -2,7 +2,6 @@ use self::arena::ArenaSet;
 use self::object::Object;
 use self::object::ObjectHandle;
 use self::value::Value;
-use self::value::Variant;
 
 pub mod value;
 pub mod object;
@@ -92,19 +91,7 @@ impl Gc {
             I: Iterator<Item=Value>
     {
         // Mark
-        let roots = roots().filter_map(|v| {
-            if let Variant::Obj(obj) = v.decode() {
-                Some(obj)
-            } else {
-                None
-            }
-        });
-        for mut root in roots {
-            if root.is_marked() {
-                root.mark();
-                // root.trace();
-            }
-        }
+        roots().filter_map(|v| v.as_object()).for_each(|mut o| o.trace());
 
         // Sweep
         self.objects.sweep();

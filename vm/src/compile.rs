@@ -2,7 +2,7 @@ use chunk::{Chunk, Op};
 
 use gc::Gc;
 use gc::value::Value;
-use gc::object::{Object, LoxFunction};
+use gc::object::{Object, ObjectHandle, LoxFunction};
 
 use parser::ast::*;
 
@@ -147,7 +147,7 @@ impl<'g> Compiler<'g> {
         }
     }
 
-    pub fn compile(mut self, stmts: &[Stmt]) -> Value {
+    pub fn compile(mut self, stmts: &[Stmt]) -> ObjectHandle {
         self.start_function("<script>", 0, 0);
         for stmt in stmts {
             self.compile_stmt(stmt);
@@ -411,7 +411,7 @@ impl<'g> Compiler<'g> {
         // once `end_function` is called.
         let upvalues = self.state_mut().upvalues.clone();
 
-        let value = self.end_function();
+        let value = self.end_function().into_value();
         let idx = self.chunk_mut().add_constant(value);
         self.emit(Op::Closure);
         self.emit_byte(idx);
@@ -462,7 +462,7 @@ impl<'g> Compiler<'g> {
         self.states.push(state);
     }
 
-    fn end_function(&mut self) -> Value {
+    fn end_function(&mut self) -> ObjectHandle {
         self.emit(Op::Nil);
         self.emit(Op::Return);
         let mut state = self.states.pop().expect("states to be nonempty");
@@ -472,11 +472,10 @@ impl<'g> Compiler<'g> {
         }
         state.function.set_upvalue_count(state.upvalues.len());
         let function = Object::LoxFunction(state.function);
-        let value = self.gc.allocate(function, || {
+        self.gc.allocate(function, || {
             // FIXME: self Cannot be borrowed because GC is also borrowed
             [].iter().cloned()
-        }).into_value();
-        value
+        })
     }
 
     fn dissassemble(&self, chunk: &Chunk) {
