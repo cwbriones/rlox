@@ -12,6 +12,7 @@ pub enum Object {
     LoxFunction(LoxFunction),
     LoxClosure(LoxClosure),
     LoxUpValue(LoxUpValue),
+    NativeFunction(NativeFunction),
 }
 
 pub struct LoxFunction {
@@ -49,16 +50,29 @@ impl LoxFunction {
     }
 }
 
+pub struct NativeFunction {
+    pub name: String,
+    pub arity: u8,
+    pub function: fn(&[Value]) -> Value,
+}
+
 pub struct LoxClosure {
     function: ObjectHandle,
     upvalues: Vec<ObjectHandle>,
+    pub arity: u8,
 }
 
 impl LoxClosure {
     pub fn new(function: ObjectHandle, upvalues: Vec<ObjectHandle>) -> Self {
+        let arity = if let Object::LoxFunction(ref f) = *function {
+            f.arity
+        } else {
+            panic!("Closure should always be constructed from a function");
+        };
         LoxClosure {
             function,
             upvalues,
+            arity,
         }
     }
 
@@ -133,6 +147,16 @@ impl LoxUpValue {
 }
 
 impl Object {
+    pub fn native_fn(name: &str, arity: u8, function: fn(&[Value]) -> Value) -> Self {
+        Object::NativeFunction(
+            NativeFunction {
+                name: name.into(),
+                arity,
+                function,
+            },
+        )
+    }
+
     pub fn string(string: String) -> Self {
         Object::String(string)
     }
@@ -161,6 +185,7 @@ impl Debug for Object {
             Object::LoxFunction(ref fun) => write!(f, "<function: {:?}>", fun.name),
             Object::LoxClosure(ref cl) => write!(f, "<closure {:?}>", cl.function),
             Object::LoxUpValue(ref up) => write!(f, "<upvalue [{:?}]>", up.value),
+            Object::NativeFunction(ref na) => write!(f, "<native fn {:?}>", na.name),
         }
     }
 }
@@ -169,9 +194,10 @@ impl Display for Object {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
         match *self {
             Object::String(ref s) => write!(f, "{}", s),
-            Object::LoxFunction(ref fun) => write!(f, "<function {:?}>", fun.name),
-            Object::LoxClosure(ref cl) => write!(f, "<closure {:?}>", cl.function),
+            Object::LoxFunction(ref fun) => write!(f, "<fn '{}'>", fun.name),
+            Object::LoxClosure(ref cl) => write!(f, "<closure '{:?}'>", cl.function),
             Object::LoxUpValue(ref up) => write!(f, "{}", up.value),
+            Object::NativeFunction(ref na) => write!(f, "<native fn '{}'>", na.name),
         }
     }
 }

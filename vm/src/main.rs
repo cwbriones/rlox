@@ -17,6 +17,7 @@ mod debug;
 mod compile;
 mod vm;
 mod gc;
+mod native;
 
 fn main() {
     env_logger::init();

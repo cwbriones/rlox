@@ -10,6 +10,7 @@ use gc::object::LoxUpValue;
 use gc::value::Value;
 use gc::value::Variant;
 use parser::ast::Stmt;
+use native;
 
 const STACK_SIZE: usize = 4096;
 
@@ -112,6 +113,7 @@ pub enum RuntimeError {
     ArgumentNotANumber,
     ArgumentNotAString,
     BadCall,
+    BadArgs,
 }
 
 impl RuntimeError {
@@ -121,6 +123,7 @@ impl RuntimeError {
             RuntimeError::ArgumentNotANumber => "Operands must be numbers",
             RuntimeError::ArgumentNotAString => "argument is not a string",
             RuntimeError::BadCall => "value is not callable",
+            RuntimeError::BadArgs => "Wrong number of arguments",
         }
     }
 }
@@ -136,7 +139,16 @@ impl VM {
         }
     }
 
+    fn define_natives(&mut self) {
+        let clock = self.allocate(Object::native_fn("clock", 0, native::clock));
+        self.globals.insert("clock".into(), clock.into_value());
+
+        let print = self.allocate(Object::native_fn("printf", 1, native::native_print));
+        self.globals.insert("printf".into(), print.into_value());
+    }
+
     pub fn interpret(&mut self, stmts: &[Stmt]) {
+        self.define_natives();
         let function = {
             let compiler = Compiler::new(&mut self.gc);
             compiler.compile(stmts)
@@ -333,19 +345,35 @@ impl VM {
 
     fn call(&mut self, arity: u8) {
         let last = self.stack.len();
-        let stack_start = last - (arity + 1) as usize;
-        let callee = self.stack[stack_start];
+        let frame_start = last - (arity + 1) as usize;
+        let callee = self.stack[frame_start];
 
         // ensure callee is a closure
-        match callee.decode() {
-            Variant::Obj(o) if o.is_closure() => {
-                let frame = CallFrame::new(o, stack_start);
-                self.frames.push(frame);
-            }
-            _ => {
-                self.runtime_error(RuntimeError::BadCall)
+        if let Some(o) = callee.as_object() {
+            match *o {
+                Object::LoxClosure(ref closure) => {
+                    if closure.arity != arity {
+                        self.runtime_error(RuntimeError::BadArgs);
+                    }
+                    let frame = CallFrame::new(o, frame_start);
+                    self.frames.push(frame);
+                    return;
+                },
+                Object::NativeFunction(ref native) => {
+                    if native.arity != arity {
+                        self.runtime_error(RuntimeError::BadArgs);
+                    }
+                    let val = {
+                        (native.function)(&self.stack[frame_start..])
+                    };
+                    self.stack.pop(); // function
+                    self.stack.push(val);
+                    return;
+                },
+                _ => {},
             }
         }
+        self.runtime_error(RuntimeError::BadCall)
     }
 
     fn ret(&mut self) {
