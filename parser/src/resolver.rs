@@ -38,6 +38,7 @@ impl Scopes {
     }
 
     fn resolve_local(&mut self, var: &mut Variable) {
+        let scope_len = self.scopes.len();
         // We skip the first scope to treat it as global.
         let scopes_iter = self.scopes.iter().skip(1).rev();
         // How many scopes are within the current function?
@@ -47,10 +48,11 @@ impl Scopes {
         for (depth, scope) in scopes_iter.enumerate() {
             if scope.contains_key(var.name()) {
                 var.resolve_local(depth, function_size);
+                debug!("[scope={}] var '{}' resolved to depth={} function_size={}", scope_len, var.name(), depth + 1, function_size);
                 return;
             }
         }
-        debug!("var '{}' assumed global", var.name());
+        debug!("[scope={}] var '{}' assumed global", scope_len, var.name());
     }
 
     fn init(&mut self, var: &str) -> Result {
@@ -62,11 +64,16 @@ impl Scopes {
     fn declare(&mut self, var: &str) -> Result {
         use std::collections::hash_map::Entry;
 
-        let is_local = self.scopes.len() > 1;
+        let scope_len = self.scopes.len();
+        let is_local = scope_len > 1;
         let scope = self.scopes.last_mut().expect("scope stack to be nonempty");
 
+        debug!("[scope={}] declaring {} variable {}", scope_len, if is_local { "local" } else { "global" }, var);
+
         match scope.entry(var.into()) {
-            Entry::Occupied(_) if is_local => Err(ResolveError::AlreadyDeclared),
+            Entry::Occupied(_) if is_local => {
+                Err(ResolveError::AlreadyDeclared)
+            }
             // Global Scope, okay to redeclare.
             Entry::Occupied(_) => Ok(()),
             Entry::Vacant(entry) => {
@@ -77,6 +84,8 @@ impl Scopes {
     }
 
     fn define(&mut self, var: &str) {
+        let scope_len = self.scopes.len();
+        debug!("[scope={}] defining variable {}", scope_len, var);
         let scope = self.scopes.last_mut().expect("scope stack to be nonempty");
         if let Some(val) = scope.get_mut(var) {
             *val = true;
@@ -90,12 +99,12 @@ impl Scopes {
     }
 
     fn begin(&mut self) {
-        debug!("NEW SCOPE");
+        debug!("entering scope {}", self.scopes.len() + 1);
         self.scopes.push(HashMap::new());
     }
 
     fn end(&mut self) {
-        debug!("END SCOPE");
+        debug!("exiting scope {}", self.scopes.len());
         self.scopes.pop().expect("scopes stack to be nonempty");
     }
 
@@ -110,14 +119,14 @@ impl Scopes {
     fn begin_function(&mut self, function: FunctionType) {
         self.begin();
         let scope = self.scopes.len() - 1;
-        debug!("NEW FUNCTION {}", scope);
+        debug!("[scope={}] entering function", scope + 1);
         self.functions.push((function, scope));
     }
 
     fn end_function(&mut self) {
         self.end();
         self.functions.pop().expect("end_function called at top-level");
-        debug!("END FUNCTION");
+        debug!("[scope={}] exiting function", self.scopes.len());
     }
 }
 
@@ -192,6 +201,7 @@ impl Resolver {
             },
             Stmt::Class(ref mut class_decl) =>{
                 self.scopes.init(class_decl.var.name())?;
+                self.scopes.resolve_local(&mut class_decl.var);
                 let enclosing_class = self.class.take();
                 if let Some(ref mut superclass) = class_decl.superclass {
                     self.class = Some(ClassType::Subclass);

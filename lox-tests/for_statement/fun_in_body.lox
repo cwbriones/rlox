@@ -1,2 +1,2 @@
-// [line 2] Error at 'fun': Expect expression.
+// [line 2] Error at 'fun': Expect '(' after function name.
 for (;;) fun foo() {}

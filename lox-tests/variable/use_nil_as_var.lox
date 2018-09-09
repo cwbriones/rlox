@@ -1,2 +1,2 @@
-// [line 2] Error at 'nil': Expect variable name.
+// [line 2] Error at 'nil': Expect identifier after keyword 'var'.
 var nil = "value";

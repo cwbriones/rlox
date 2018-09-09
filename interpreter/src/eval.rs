@@ -158,6 +158,7 @@ impl Eval for Stmt {
                 } else {
                     Value::new_class(class_decl.var.name(), class_decl.methods.clone(), env.clone(), None)
                 };
+                debug!("{:?}", &class_decl.var);
                 interpreter.assign(env, &class_decl.var, class);
                 return Ok(Value::Void);
             },

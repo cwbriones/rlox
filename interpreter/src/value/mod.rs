@@ -75,7 +75,7 @@ impl From<bool> for Value {
 impl Display for Value {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
         match *self {
-            Value::Number(n) => write!(f, "{:?}", n),
+            Value::Number(n) => write!(f, "{}", n),
             Value::String(ref s) => write!(f, "{}", s),
             Value::True => write!(f, "true"),
             Value::False => write!(f, "false"),

@@ -1,2 +1,2 @@
-// [line 2] Error at 'false': Expect variable name.
+// [line 2] Error at 'false': Expect identifier after keyword 'var'.
 var false = "value";
