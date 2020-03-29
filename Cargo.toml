@@ -2,5 +2,6 @@
 members = [
     "vm",
     "parser",
-    "interpreter"
+    "interpreter",
+    "broom"
 ]

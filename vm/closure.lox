@@ -3,4 +3,8 @@ fun foo() {
     fun bar() {
         return a;
     }
+    a = a + 41;
+    return bar;
 }
+
+print(foo()()); // expect: 42

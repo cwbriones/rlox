@@ -1,13 +1,14 @@
 use chunk::{Chunk, Op};
 
-use gc::Gc;
+use broom::Heap;
+
 use gc::value::Value;
-use gc::object::{Object, ObjectHandle, LoxFunction};
+use gc::object::{Object, LoxFunction};
 
 use parser::ast::*;
 
 pub struct Compiler<'g> {
-    gc: &'g mut Gc,
+    heap: &'g mut Heap<Object>,
     states: Vec<CompileState>,
 }
 
@@ -138,14 +139,14 @@ impl CompileState {
 }
 
 impl<'g> Compiler<'g> {
-    pub fn new(gc: &'g mut Gc) -> Self {
+    pub fn new(heap: &'g mut Heap<Object>) -> Self {
         Compiler {
-            gc,
+            heap,
             states: Vec::new(),
         }
     }
 
-    pub fn compile(mut self, stmts: &[Stmt]) -> ObjectHandle {
+    pub fn compile(mut self, stmts: &[Stmt]) -> LoxFunction {
         self.start_function("<script>", 0, 0);
         for stmt in stmts {
             self.compile_stmt(stmt);
@@ -319,7 +320,7 @@ impl<'g> Compiler<'g> {
                         .unwrap()
                         .function
                         .chunk_mut();
-                    chunk.string_constant(self.gc, var.name())
+                    chunk.string_constant(self.heap, var.name())
                 };
                 self.emit_byte(idx);
             },
@@ -340,7 +341,7 @@ impl<'g> Compiler<'g> {
                         .unwrap()
                         .function
                         .chunk_mut();
-                    chunk.string_constant(self.gc, var.name())
+                    chunk.string_constant(self.heap, var.name())
                 };
                 self.emit_byte(idx);
             },
@@ -376,7 +377,7 @@ impl<'g> Compiler<'g> {
                 .unwrap()
                 .function
                 .chunk_mut();
-            chunk.string_constant(self.gc, name)
+            chunk.string_constant(self.heap, name)
         };
         self.emit_byte(idx);
     }
@@ -405,7 +406,9 @@ impl<'g> Compiler<'g> {
         // once `end_function` is called.
         let upvalues = self.state_mut().upvalues.clone();
 
-        let value = self.end_function().into_value();
+        let function = self.end_function();
+        let handle = self.heap.insert(Object::LoxFunction(function)).into_handle();
+        let value = Value::object(handle);
         let idx = self.chunk_mut().add_constant(value);
         self.emit(Op::Closure);
         self.emit_byte(idx);
@@ -456,7 +459,7 @@ impl<'g> Compiler<'g> {
         self.states.push(state);
     }
 
-    fn end_function(&mut self) -> ObjectHandle {
+    fn end_function(&mut self) -> LoxFunction {
         self.emit(Op::Nil);
         self.emit(Op::Return);
         let mut state = self.states.pop().expect("states to be nonempty");
@@ -465,13 +468,11 @@ impl<'g> Compiler<'g> {
             self.dissassemble(state.function.chunk());
         }
         state.function.set_upvalue_count(state.upvalues.len());
-        let function = Object::LoxFunction(state.function);
-        self.gc.allocate(function, || {
-            // FIXME: self Cannot be borrowed because GC is also borrowed
-            [].iter().cloned()
-        })
+        // TODO: This should be removed instead of copied so that it cannot be used again.
+        state.function
     }
 
+    #[cfg(debug_assertions)]
     fn dissassemble(&self, chunk: &Chunk) {
         use debug::Disassembler;
 
@@ -512,7 +513,7 @@ impl<'g> Compiler<'g> {
             Literal::String(ref s) => {
                 let idx = {
                     let chunk = self.states.last_mut().unwrap().function.chunk_mut();
-                    chunk.string_constant(self.gc, s)
+                    chunk.string_constant(self.heap, s)
                 };
                 self.emit(Op::Constant(idx));
             }

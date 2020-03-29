@@ -7,12 +7,14 @@ use parser::ast::Stmt;
 extern crate parser;
 extern crate failure;
 extern crate env_logger;
+extern crate broom;
 
 #[macro_use]
 extern crate log;
 
 #[macro_use]
 mod chunk;
+#[cfg(debug_assertions)]
 mod debug;
 mod compile;
 mod vm;
@@ -70,9 +72,8 @@ fn help(_args: env::Args) -> Result<(), failure::Error> {
 // }
 
 fn execute(filename: &str) -> Result<(), failure::Error> {
-    let gc = gc::Gc::new();
     let stmts = parse(&filename)?;
-    vm::VM::new(gc).interpret(&stmts);
+    vm::VM::new().interpret(&stmts);
     Ok(())
 }
 

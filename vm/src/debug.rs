@@ -1,4 +1,5 @@
 use chunk::Chunk;
+use gc::object::Object;
 use gc::value::Value;
 
 pub struct Disassembler<'c> {
@@ -155,9 +156,14 @@ impl<'c> Disassembler<'c> {
 
     fn closure(&mut self) {
         let value = self.read_constant();
-        let count = value.as_object()
-            .and_then(|o| o.as_function().map(|f| f.upvalue_count()))
-            .expect("closure argument to be function");
+        // FIXME: unsafe
+        let count = value.as_object().and_then(|o| unsafe {
+            if let Object::LoxFunction(f) = o.get_unchecked() {
+                return Some(f.upvalue_count())
+            }
+            None
+        })
+        .expect("closure argument to be function");
         print!("OP_CLOSURE\t{} ", value);
         for _ in 0..count {
             let is_local = self.read_byte() > 0;

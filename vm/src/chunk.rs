@@ -1,13 +1,22 @@
-use gc::Gc;
+use broom::Heap;
+use broom::prelude::Trace;
+use broom::prelude::Tracer;
+
 use gc::value::Value;
-use gc::value::Variant;
 use gc::object::Object;
 
+#[derive(Debug, Clone)]
 pub struct Chunk {
     code: Vec<u8>,
     name: String,
     constants: Vec<Value>,
     lines: Vec<LineInfo>,
+}
+
+impl Trace<Object> for Chunk {
+    fn trace(&self, tracer: &mut Tracer<Object>) {
+        self.constants.trace(tracer);
+    }
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -103,23 +112,18 @@ impl Chunk {
         self.constants.get(idx as usize)
     }
 
-    pub fn string_constant(&mut self, gc: &mut Gc, string: &str) -> u8 {
+    pub fn string_constant(&mut self, heap: &mut Heap<Object>, string: &str) -> u8 {
         // Scan constants for one that already exists
         for (i, c) in self.constants().enumerate() {
-            if let Variant::Obj(obj) = c.decode() {
-                match *obj {
-                    Object::String(ref s) if s == string => {
-                        return i as u8;
-                    },
-                    _ => {},
+            if let Some(&Object::String(ref s)) = c.deref(heap) {
+                if s == string {
+                    return i as u8
                 }
             }
         }
 
-        // Allocate a new string.
-        // FIXME
-        let handle = gc.allocate_string(string.to_owned(), || { [].iter().cloned() });
-        self.add_constant(handle.into_value())
+        let handle = heap.insert(Object::String(string.to_owned())).into_handle();
+        self.add_constant(handle.into())
     }
 
     pub fn len(&self) -> usize {
@@ -308,7 +312,7 @@ macro_rules! decode_op {
             0x14 => $this.imm_nil(),
             0x15 => $this.imm_true(),
             0x16 => $this.imm_false(),
-            a @ 0x17...0x1e => {
+            a @ 0x17..=0x1e => {
                 $this.call(a - 0x17)
             },
             0x1f => $this.op_loop(),

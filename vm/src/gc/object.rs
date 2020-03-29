@@ -1,12 +1,13 @@
-use super::arena::ArenaPtr;
 use super::value::Value;
 
 use ::chunk::Chunk;
 
-use std::fmt::{Debug, Display};
-use std::ops::Deref;
-use std::ops::DerefMut;
+use broom::prelude::Trace;
+use broom::prelude::Tracer;
 
+use std::fmt::{Debug, Display};
+
+#[derive(Clone)]
 pub enum Object {
     String(String),
     LoxFunction(LoxFunction),
@@ -15,6 +16,19 @@ pub enum Object {
     NativeFunction(NativeFunction),
 }
 
+impl Trace<Self> for Object {
+    fn trace(&self, tracer: &mut Tracer<Self>) {
+        match self {
+            Object::String(_) => {},
+            Object::LoxFunction(f) => f.trace(tracer),
+            Object::NativeFunction(_) => {},
+            Object::LoxUpValue(_) => {},
+            Object::LoxClosure(c) => c.trace(tracer),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct LoxFunction {
     name: String,
     chunk: Chunk,
@@ -50,25 +64,29 @@ impl LoxFunction {
     }
 }
 
+impl Trace<Object> for LoxFunction {
+    fn trace(&self, tracer: &mut Tracer<Object>) {
+        self.chunk.trace(tracer);
+    }
+}
+
+#[derive(Clone)]
 pub struct NativeFunction {
     pub name: String,
     pub arity: u8,
     pub function: fn(&[Value]) -> Value,
 }
 
+#[derive(Clone)]
 pub struct LoxClosure {
-    function: ObjectHandle,
-    upvalues: Vec<ObjectHandle>,
+    function: LoxFunction,
+    upvalues: Vec<LoxUpValue>,
     pub arity: u8,
 }
 
 impl LoxClosure {
-    pub fn new(function: ObjectHandle, upvalues: Vec<ObjectHandle>) -> Self {
-        let arity = if let Object::LoxFunction(ref f) = *function {
-            f.arity
-        } else {
-            panic!("Closure should always be constructed from a function");
-        };
+    pub fn new(function: LoxFunction, upvalues: Vec<LoxUpValue>) -> Self {
+        let arity = function.arity;
         LoxClosure {
             function,
             upvalues,
@@ -76,43 +94,56 @@ impl LoxClosure {
         }
     }
 
-    pub fn function(&self) -> ObjectHandle {
-        self.function
+    pub fn function(&self) -> &LoxFunction {
+        &self.function
     }
 
     pub fn upvalue_count(&self) -> usize {
         self.upvalues.len()
     }
 
-    pub fn get(&self, idx: usize) -> ObjectHandle {
+    pub fn get(&self, idx: usize) -> LoxUpValue {
         self.upvalues[idx]
     }
 
     pub fn get_in(&self, idx: usize) -> Value {
+        // FIXME(unsafe)
         // ugh...
-        if let Object::LoxUpValue(ref up) = *self.upvalues[idx] {
-            return unsafe { up.get() };
+        unsafe {
+            self.upvalues[idx].get()
         }
-        panic!("closure should only contain upvalues")
     }
 
-    pub fn set(&mut self, idx: usize, upvalue: ObjectHandle) {
+    pub fn set(&mut self, idx: usize, upvalue: LoxUpValue) {
         self.upvalues[idx] = upvalue;
     }
 
     pub fn set_in(&mut self, idx: usize, value: Value) {
-        if let Object::LoxUpValue(ref mut up) = *self.upvalues[idx] {
-            up.value = value;
-            return;
-        }
-        panic!("closure should only contain upvalues")
+        self.upvalues[idx].value = value;
     }
 }
 
+impl Trace<Object> for LoxClosure {
+    fn trace(&self, tracer: &mut Tracer<Object>) {
+        self.function.trace(tracer);
+        self.upvalues.trace(tracer);
+    }
+}
+
+#[derive(Clone, Copy)]
 pub struct LoxUpValue {
     value: Value,
     local: *mut Value,
     closed: bool,
+}
+
+impl Trace<Object> for LoxUpValue {
+    fn trace(&self, tracer: &mut Tracer<Object>) {
+        if let Some(o) = self.value.as_object() {
+            o.trace(tracer)
+        }
+        // We don't need to trace local since if it's valid then it's still rooted on the stack.
+    }
 }
 
 impl LoxUpValue {
@@ -199,75 +230,5 @@ impl Display for Object {
             Object::LoxUpValue(ref up) => write!(f, "{}", up.value),
             Object::NativeFunction(ref na) => write!(f, "<native fn '{}'>", na.name),
         }
-    }
-}
-
-#[derive(Clone, Copy, PartialEq)]
-pub struct ObjectHandle {
-    ptr: ArenaPtr<Object>
-}
-
-impl ObjectHandle {
-    pub fn new(ptr: ArenaPtr<Object>) -> Self {
-        ObjectHandle {ptr}
-    }
-
-    pub fn into_value(self) -> Value {
-        Value::object(self)
-    }
-
-    pub fn into_raw(self) -> u64 {
-        self.ptr.into_raw()
-    }
-
-    pub fn mark(&mut self) {
-        self.ptr.mark();
-    }
-
-    pub fn trace(&mut self) {
-        if self.ptr.is_marked() {
-            return;
-        }
-        match **self {
-            Object::LoxClosure(ref mut cl) => {
-                cl.function.trace();
-                cl.upvalues.iter_mut().for_each(|o| o.trace());
-            }
-            Object::LoxUpValue(ref mut up) => {
-                up.value.as_object().map(|mut o| o.trace());
-            }
-            Object::LoxFunction(ref mut f) => {
-                f.chunk.constants()
-                    .filter_map(|v| v.as_object())
-                    .for_each(|ref mut o| o.trace());
-            }
-            _ => {},
-        }
-    }
-}
-
-impl Deref for ObjectHandle {
-    type Target = Object;
-
-    fn deref(&self) -> &Self::Target {
-        self.ptr.deref()
-    }
-}
-
-impl DerefMut for ObjectHandle {
-    fn deref_mut(&mut self) -> &mut Object {
-        self.ptr.deref_mut()
-    }
-}
-
-impl Display for ObjectHandle {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-        write!(f, "{}", self.deref())
-    }
-}
-
-impl Debug for ObjectHandle {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-        write!(f, "{:?}", self.deref())
     }
 }

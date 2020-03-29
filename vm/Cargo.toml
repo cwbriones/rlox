@@ -7,6 +7,7 @@ authors = ["Christian Briones <cwbriones@gmail.com>"]
 failure = "0.1.1"
 log = "*"
 parser = { path = "../parser" }
+broom = { path = "../broom" }
 env_logger = "*"
 
 [features]

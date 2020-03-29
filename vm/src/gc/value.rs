@@ -1,12 +1,17 @@
-use super::object::ObjectHandle;
-use super::arena::ArenaPtr;
+use super::object::Object;
 
-use std::mem::transmute;
 use std::fmt::{Debug, Display};
 
-#[derive(Copy, Clone, PartialEq)]
+use broom::{
+    Heap,
+    Handle,
+    tag::{Tag, TaggedHandle},
+    prelude::{Trace, Tracer},
+};
+
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Value {
-    raw: u64,
+    handle: TaggedHandle<Object>,
 }
 
 #[derive(Debug)]
@@ -15,54 +20,48 @@ pub enum Variant {
     True,
     False,
     Nil,
-    Obj(ObjectHandle)
+    Obj(Handle<Object>)
 }
 
-const TAG_TRUE: u64 = 0x01;
-const TAG_FALSE: u64 = 0x02;
-const TAG_NIL: u64 = 0x03;
-
-const QNAN: u64 = 0x7ffc000000000000;
-const SIGN: u64 = 1 << 63;
-const TRUE: u64 = QNAN | TAG_TRUE;
-const FALSE: u64 = QNAN | TAG_FALSE;
-const NIL: u64 = QNAN | TAG_NIL;
+const TAG_TRUE: u8 = 0x01;
+const TAG_FALSE: u8 = 0x02;
+const TAG_NIL: u8 = 0x03;
 
 impl Value {
     pub unsafe fn from_raw(raw: u64) -> Self {
-        Value { raw }
-    }
-
-    pub fn into_raw(self) -> u64 {
-        self.raw
-    }
-
-    pub fn float(f: f64) -> Self {
         Value {
-            raw: unsafe { transmute(f) }
+            handle: TaggedHandle::from_raw(raw),
+        }
+    }
+
+    pub fn float(float: f64) -> Self {
+        Value {
+            handle: TaggedHandle::from_float(float),
         }
     }
 
     pub fn truelit() -> Self {
         Value {
-            raw: TRUE,
+            handle: TaggedHandle::from_tag(TAG_TRUE),
         }
     }
 
     pub fn falselit() -> Self {
         Value {
-            raw: FALSE,
+            handle: TaggedHandle::from_tag(TAG_FALSE),
         }
     }
 
     pub fn nil() -> Self {
         Value {
-            raw: NIL,
+            handle: TaggedHandle::from_tag(TAG_NIL),
         }
     }
 
-    pub fn object(handle: ObjectHandle) -> Self {
-        Value { raw: handle.into_raw() | QNAN | SIGN }
+    pub fn object(handle: Handle<Object>) -> Self {
+        Value {
+            handle: TaggedHandle::from_handle(handle)
+        }
     }
 
     pub fn as_float(&self) -> f64 {
@@ -73,41 +72,59 @@ impl Value {
     }
 
     pub fn truthy(&self) -> bool {
-        self.raw != FALSE && self.raw != NIL
+        match self.decode() {
+            Variant::False | Variant::Nil => false,
+            _ => true,
+        }
     }
 
     pub fn falsey(&self) -> bool {
-        self.raw == FALSE || self.raw == NIL
+        !self.truthy()
     }
 
     pub fn decode(&self) -> Variant {
-        let u = self.raw;
-        if u & QNAN != QNAN {
-            return Variant::Float(unsafe{ transmute(u) });
-        }
-        // sign bit indicates pointer
-        if (u & (QNAN | SIGN)) == (QNAN | SIGN) {
-            let ptr = u & (!(QNAN | SIGN)); // only keep lower 51 bits
-            unsafe {
-                let arena_ptr = ArenaPtr::from_raw(ptr);
-                let handle = ObjectHandle::new(arena_ptr);
-                return Variant::Obj(handle);
-            }
-        }
-        match u & 7 {
-            TAG_TRUE => Variant::True,
-            TAG_FALSE => Variant::False,
-            TAG_NIL => Variant::Nil,
-            tag => panic!("unknown singleton {}", tag),
+        match self.handle.clone().decode() {
+            Tag::Float(float) => {
+                Variant::Float(float)
+            },
+            Tag::Handle(handle) => {
+                Variant::Obj(handle)
+            },
+            Tag::Tag(t) if t == TAG_TRUE => Variant::True,
+            Tag::Tag(t) if t == TAG_FALSE => Variant::False,
+            Tag::Tag(t) if t == TAG_NIL => Variant::Nil,
+            Tag::Tag(t) => panic!("Unknown tag {}", t)
         }
     }
 
-    pub fn as_object(&self) -> Option<ObjectHandle> {
-        if let Variant::Obj(ref o) = self.decode() {
-            Some(*o)
+    pub fn deref<'a>(&self, heap: &'a Heap<Object>) -> Option<&'a Object> {
+        self.as_object().and_then(|h| heap.get(h))
+    }
+
+    pub fn deref_mut<'a>(&self, heap: &'a mut Heap<Object>) -> Option<&'a mut Object> {
+        self.as_object().and_then(move |h| heap.get_mut(h))
+    }
+
+    pub fn as_object(&self) -> Option<Handle<Object>> {
+        if let Tag::Handle(h) = self.handle.clone().decode() {
+            Some(h)
         } else {
             None
         }
+    }
+}
+
+impl Trace<Object> for Value {
+    fn trace(&self, tracer: &mut Tracer<Object>) {
+        if let Variant::Obj(obj) = self.decode() {
+            obj.trace(tracer);
+        }
+    }
+}
+
+impl From<Handle<Object>> for Value {
+    fn from(handle: Handle<Object>) -> Self {
+        Value::object(handle)
     }
 }
 
@@ -130,7 +147,11 @@ impl Display for Value {
             Variant::False => write!(f, "false"),
             Variant::True => write!(f, "true"),
             Variant::Float(n) => write!(f, "{}", n),
-            Variant::Obj(o) => write!(f, "{}", o),
+            // FIXME: Display shouldn't be unsafe but there's no way to check the
+            // pointer without dereferencing.
+            Variant::Obj(o) => unsafe {
+                write!(f, "{}", o.get_unchecked())
+            }
         }
     }
 }

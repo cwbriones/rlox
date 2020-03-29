@@ -1,11 +1,12 @@
 use std::collections::HashMap;
 
+use broom::Heap;
+use broom::Handle;
+
 use chunk::Chunk;
 use compile::Compiler;
-use gc::Gc;
 use gc::object::Object;
 use gc::object::LoxClosure;
-use gc::object::ObjectHandle;
 use gc::object::LoxUpValue;
 use gc::value::Value;
 use gc::value::Variant;
@@ -17,25 +18,22 @@ const STACK_SIZE: usize = 4096;
 pub struct VM {
     // FIXME: Local variables are not currently rooted properly, we will need
     // to scan the stack to address this at this point.
-    gc: Gc,
+    heap: Heap<Object>,
     globals: HashMap<String, Value>,
-    open_upvalues: Vec<ObjectHandle>,
+    open_upvalues: Vec<LoxUpValue>,
 
     stack: Vec<Value>,
     frames: Vec<CallFrame>,
 }
 
 pub struct CallFrame {
-    closure: ObjectHandle,
+    closure: LoxClosure,
     ip: usize,
     stack_start: usize,
 }
 
 impl CallFrame {
-    pub fn new(closure: ObjectHandle, stack_start: usize) -> Self {
-        if !closure.is_closure() {
-            panic!("Callframe must be constructed from a closure");
-        }
+    pub fn new(closure: LoxClosure, stack_start: usize) -> Self {
         CallFrame {
             closure,
             ip: 0,
@@ -62,34 +60,27 @@ impl CallFrame {
     }
 
     pub fn read_constant_at(&mut self, idx: u8) -> Value {
-        self.with_chunk(|c| c.get_constant(idx).unwrap().clone())
+        self.with_chunk(|c| *c.get_constant(idx).unwrap())
     }
 
     pub fn read_constant(&mut self) -> Value {
         let idx = self.read_byte();
-        self.with_chunk(|c| c.get_constant(idx).unwrap().clone())
+        self.with_chunk(|c| *c.get_constant(idx).unwrap())
     }
 
     fn with_closure<F, T>(&mut self, fun: F) -> T
         where
             F: FnOnce(&mut LoxClosure) -> T
     {
-        if let Object::LoxClosure(ref mut cl) = *self.closure {
-            return fun(cl);
-        }
-        panic!("should always refer to a closure");
+        fun(&mut self.closure)
     }
 
     pub fn with_chunk<F, T>(&self, fun: F) -> T
         where
             F: FnOnce(&Chunk) -> T
     {
-        if let Object::LoxClosure(ref closure) = *self.closure {
-            if let Object::LoxFunction(ref f) = *closure.function() {
-                return fun(f.chunk());
-            }
-        }
-        panic!("should always refer to a closure");
+        let function = self.closure.function();
+        fun(function.chunk())
     }
 }
 
@@ -129,10 +120,10 @@ impl RuntimeError {
 }
 
 impl VM {
-    pub fn new(gc: Gc) -> Self {
+    pub fn new() -> Self {
         VM {
             stack: Vec::with_capacity(STACK_SIZE),
-            gc,
+            heap: Heap::default(),
             globals: HashMap::new(),
             frames: Vec::with_capacity(256),
             open_upvalues: Vec::with_capacity(16),
@@ -141,20 +132,20 @@ impl VM {
 
     fn define_natives(&mut self) {
         let clock = self.allocate(Object::native_fn("clock", 0, native::clock));
-        self.globals.insert("clock".into(), clock.into_value());
+        self.globals.insert("clock".into(), clock.into());
 
         let print = self.allocate(Object::native_fn("printf", 1, native::native_print));
-        self.globals.insert("printf".into(), print.into_value());
+        self.globals.insert("printf".into(), print.into());
     }
 
     pub fn interpret(&mut self, stmts: &[Stmt]) {
         self.define_natives();
         let function = {
-            let compiler = Compiler::new(&mut self.gc);
+            let compiler = Compiler::new(&mut self.heap);
             compiler.compile(stmts)
         };
         let closure = LoxClosure::new(function, Vec::new());
-        let value = self.allocate(Object::LoxClosure(closure)).into_value();
+        let value = self.allocate(Object::LoxClosure(closure)).into();
         self.push(value);
         self.call(0);
         self.run();
@@ -185,11 +176,11 @@ impl VM {
                 self.push((a + b).into());
             }
             (Variant::Obj(a), Variant::Obj(b)) => {
-                if let (&Object::String(ref a), &Object::String(ref b)) = (&*a, &*b) {
+                if let (Some(&Object::String(ref a)), Some(&Object::String(ref b))) = (self.heap.get(a), self.heap.get(b)) {
                     let c = a.clone() + b;
                     // FIXME: Gc Rooting.
-                    let val = self.gc.allocate_string(c, || { [].iter().cloned() }).into_value();
-                    self.push(val);
+                    let handle = self.heap.insert(Object::String(c)).into_handle();
+                    self.push(Value::object(handle));
                     return;
                 }
                 self.runtime_error(RuntimeError::ArgumentNotAString);
@@ -268,7 +259,7 @@ impl VM {
         let val = self.frame_mut().read_constant();
 
         if let Variant::Obj(h) = val.decode() {
-            if let Object::String(ref s) = *h {
+            if let Some(&Object::String(ref s)) = self.heap.get(h) {
                 let val = *self.globals.get(s).expect("undefined global");
                 self.push(val);
                 return;
@@ -279,24 +270,22 @@ impl VM {
 
     fn define_global(&mut self) {
         let val = self.frame_mut().read_constant();
-        if let Variant::Obj(h) = val.decode() {
-            if let Object::String(ref s) = *h {
-                let lhs = self.pop();
-                self.globals.insert(s.clone(), lhs);
-                return;
-            }
+        let obj = val.deref(&self.heap).cloned();
+        if let Some(Object::String(s)) = obj {
+            let lhs = self.pop();
+            self.globals.insert(s, lhs);
+            return;
         }
         panic!("DEFINE_GLOBAL constant was not a string");
     }
 
     fn set_global(&mut self) {
         let val = self.frame_mut().read_constant();
-        if let Variant::Obj(h) = val.decode() {
-            if let Object::String(ref s) = *h {
-                let lhs = self.peek();
-                self.globals.insert(s.clone(), lhs);
-                return;
-            }
+        let obj = val.deref(&self.heap).cloned();
+        if let Some(Object::String(s)) = obj {
+            let lhs = self.peek();
+            self.globals.insert(s, lhs);
+            return;
         }
         panic!("SET_GLOBAL constant was not a string");
     }
@@ -346,20 +335,20 @@ impl VM {
     fn call(&mut self, arity: u8) {
         let last = self.stack.len();
         let frame_start = last - (arity + 1) as usize;
-        let callee = self.stack[frame_start];
+        let callee = &self.stack[frame_start];
 
         // ensure callee is a closure
-        if let Some(o) = callee.as_object() {
-            match *o {
+        if let Some(o) = callee.deref(&self.heap) {
+            match o {
                 Object::LoxClosure(ref closure) => {
                     if closure.arity != arity {
                         self.runtime_error(RuntimeError::BadArgs);
                     }
-                    let frame = CallFrame::new(o, frame_start);
+                    let frame = CallFrame::new(closure.clone(), frame_start);
                     self.frames.push(frame);
                     return;
                 },
-                Object::NativeFunction(ref native) => {
+                &Object::NativeFunction(ref native) => {
                     if native.arity != arity {
                         self.runtime_error(RuntimeError::BadArgs);
                     }
@@ -410,10 +399,9 @@ impl VM {
 
     fn closure(&mut self) {
         let value = self.frame_mut().read_constant();
-        if let Variant::Obj(o) = value.decode() {
-            let f = o.as_function().expect("closure argument to be function");
+        if let Some(Object::LoxFunction(f)) = value.deref(&self.heap).cloned() {
             let count = f.upvalue_count();
-            let mut upvalues = Vec::new();
+            let mut upvalues: Vec<LoxUpValue> = Vec::new();
             for _ in 0..count {
                 let is_local = self.read_byte() > 0;
                 let idx = self.read_byte() as usize;
@@ -427,45 +415,37 @@ impl VM {
                     upvalues.push(upvalue);
                 }
             }
-            let mut closure = LoxClosure::new(o.clone(), upvalues);
-            let val = self.allocate(Object::LoxClosure(closure)).into_value();
+            let closure = LoxClosure::new(f.clone(), upvalues);
+            let val = self.allocate(Object::LoxClosure(closure)).into();
             self.push(val);
             return;
         }
         panic!("closure argument should be a function");
     }
 
-    fn capture_upvalue(&mut self, idx: usize) -> ObjectHandle {
+    fn capture_upvalue(&mut self, idx: usize) -> LoxUpValue {
         let start = self.frame().stack_start;
         let local = &self.stack[start + idx] as *const _ as *mut _;
-        let matching = self.open_upvalues.iter().rev().find(|&&o| {
-            if let Object::LoxUpValue(ref o) = *o {
-                o.is(local)
-            } else {
-                false
-            }
+        self.open_upvalues.iter().rev().find(|&up| {
+            up.is(local)
         })
-        .cloned();
-
-        matching.unwrap_or_else(|| {
-            let upvalue = LoxUpValue::new(local);
-            let val = self.allocate(Object::LoxUpValue(upvalue));
-            self.open_upvalues.push(val);
-            val
+        .cloned()
+        .unwrap_or_else(|| {
+            let up = LoxUpValue::new(local);
+            self.open_upvalues.push(up);
+            up
         })
     }
 
     fn close_upvalues(&mut self, end: usize) {
         let stack_end = &self.stack[end] as *const _ as *mut Value;
         let mut open_upvalues = Vec::with_capacity(self.open_upvalues.len());
-        for handle in &mut self.open_upvalues {
-            if let Object::LoxUpValue(ref mut up) = **handle {
-                if up.local() >= stack_end {
-                    unsafe { up.close(); }
-                    continue;
-                }
+        for up in &mut self.open_upvalues {
+            if up.local() >= stack_end {
+                unsafe { up.close(); }
+                continue;
             }
-            open_upvalues.push(handle.clone());
+            open_upvalues.push(*up);
         }
         self.open_upvalues = open_upvalues;
     }
@@ -492,9 +472,7 @@ impl VM {
     }
 
     fn peek(&mut self) -> Value {
-        self.stack.last()
-            .expect("stack to be nonempty")
-            .clone()
+        *self.stack.last().expect("stack to be nonempty")
     }
 
     fn runtime_error(&self, err: RuntimeError) {
@@ -513,18 +491,8 @@ impl VM {
     ///
     /// GC wrapper that handles rooting.
     ///
-    fn allocate(&mut self, object: Object) -> ObjectHandle {
-        // Root everything on the stack as well as all closures in the current
-        // set of callframes, upvalues in scope, and globals.
-        let frame_iter = self.frames.iter().map(|f| f.closure.into_value());
-        let upvalue_iter = self.open_upvalues.iter().map(|o| o.into_value());
-        let globals_iter = self.globals.values().cloned();
-        let stack_iter = self.stack.iter().cloned();
-        let roots = stack_iter.chain(frame_iter).chain(upvalue_iter).chain(globals_iter);
-
-        self.gc.allocate(object, || {
-            roots
-        })
+    fn allocate(&mut self, object: Object) -> Handle<Object> {
+        self.heap.insert(object).into_handle()
     }
 }
 
