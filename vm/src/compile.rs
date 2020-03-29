@@ -463,7 +463,7 @@ impl<'g> Compiler<'g> {
         self.emit(Op::Nil);
         self.emit(Op::Return);
         let mut state = self.states.pop().expect("states to be nonempty");
-        #[cfg(debug_assertions)]
+        #[cfg(feature="dis")]
         {
             self.dissassemble(state.function.chunk());
         }
@@ -472,7 +472,7 @@ impl<'g> Compiler<'g> {
         state.function
     }
 
-    #[cfg(debug_assertions)]
+    #[cfg(feature="dis")]
     fn dissassemble(&self, chunk: &Chunk) {
         use debug::Disassembler;
 
@@ -482,13 +482,6 @@ impl<'g> Compiler<'g> {
 
     fn state_mut(&mut self) -> &mut CompileState {
         self.states.last_mut().expect("states to be nonempty")
-    }
-
-    fn chunk(&mut self) -> &Chunk {
-        self.states.last()
-            .expect("states to be nonempty")
-            .function
-            .chunk()
     }
 
     fn chunk_mut(&mut self) -> &mut Chunk {

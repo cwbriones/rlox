@@ -14,7 +14,7 @@ extern crate log;
 
 #[macro_use]
 mod chunk;
-#[cfg(debug_assertions)]
+#[cfg(feature="dis")]
 mod debug;
 mod compile;
 mod vm;

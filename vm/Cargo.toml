@@ -8,8 +8,10 @@ failure = "0.1.1"
 log = "*"
 parser = { path = "../parser" }
 broom = { path = "../broom" }
+integration = { path = "../integration" }
 env_logger = "*"
 
 [features]
 default = []
 op-immediate = []
+dis = []
