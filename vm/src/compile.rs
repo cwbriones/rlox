@@ -523,7 +523,7 @@ impl<'g> Compiler<'g> {
     #[cfg(feature = "op-immediate")]
     fn emit_number_literal(&mut self, n: f64) {
         self.emit(Op::Immediate);
-        let val = Value::float(n).into_raw();
+        let val = Value::float(n).to_raw();
         let chunk = self.chunk_mut();
         chunk.write_u64(val);
     }

@@ -34,6 +34,10 @@ impl Value {
         }
     }
 
+    pub fn to_raw(self) -> u64 {
+        self.handle.to_raw()
+    }
+
     pub fn float(float: f64) -> Self {
         Value {
             handle: TaggedHandle::from_float(float),
