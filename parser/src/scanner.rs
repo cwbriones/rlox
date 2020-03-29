@@ -245,7 +245,7 @@ impl<'a> Scanner<'a> {
 
     fn token_contents(&mut self, start: usize) -> &'a str {
         let end = self.iter.peek().map(|&(i, _)| i).unwrap_or(self.source.len());
-        &self.source[start..end].trim_right()
+        &self.source[start..end].trim_end()
     }
 
     fn eatwhitespace(&mut self) {
@@ -336,7 +336,7 @@ impl<'a> Scanner<'a> {
                     Err(err) => return Some(Err(err)),
                 }
             },
-            'a'...'z' | 'A'...'Z' | '_' => {
+            'a'..='z' | 'A'..='Z' | '_' => {
                 self.identifier(start)
             },
             c => return Some(Err(SyntaxError::UnexpectedChar(c))),

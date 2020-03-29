@@ -51,7 +51,7 @@ impl Repl {
 
     fn read(&mut self) -> Result<String, Error> {
         let mut line = self.editor.readline(PROMPT)?;
-        if line.trim_right().ends_with('{') {
+        if line.trim_end().ends_with('{') {
             self.read_block(&mut line)?;
         }
         Ok(line)

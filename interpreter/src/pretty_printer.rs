@@ -191,7 +191,6 @@ impl PrettyPrinter {
                 self.pop();
                 self.push_char('{');
                 // FIXME: indent
-                let indent = 0;
                 for stmt in &decl.body {
                     self.push_stmt(stmt, 0, true);
                 }
