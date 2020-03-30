@@ -18,11 +18,15 @@ use parser::ast::Stmt;
 use native;
 
 const STACK_SIZE: usize = 4096;
+const HEAP_GROWTH: usize = 2;
+
+const GC_TRIGGER_COUNT: usize = 1024;
 
 pub struct VM {
     // FIXME: Local variables are not currently rooted properly, we will need
     // to scan the stack to address this at this point.
     heap: Heap<Object>,
+    next_gc: usize,
     globals: HashMap<String, Value>,
     open_upvalues: Vec<LoxUpValue>,
 
@@ -125,6 +129,7 @@ impl VM {
         VM {
             stack: Vec::with_capacity(STACK_SIZE),
             heap: Heap::default(),
+            next_gc: GC_TRIGGER_COUNT,
             globals: HashMap::new(),
             frames: Vec::with_capacity(256),
             open_upvalues: Vec::with_capacity(16),
@@ -339,7 +344,6 @@ impl VM {
         let last = self.stack.len();
         let frame_start = last - (arity + 1) as usize;
         let callee = self.stack[frame_start].decode();
-
         // ensure callee is a callable
         if let Variant::Obj(handle) = callee {
             match self.heap.get(handle) {
@@ -408,7 +412,6 @@ impl VM {
             if frame.stack_start < self.stack.len() {
                 self.close_upvalues(frame.stack_start);
             }
-            // Remove all arguments off the stack
             self.stack.truncate(frame.stack_start);
             self.push(retval);
             return;
@@ -508,7 +511,7 @@ impl VM {
                     return
                 }
                 let class_handle = inst.class();
-                if let Some(method) = self.bind_instance(&name, handle, class_handle){
+                if let Some(method) = self.bind_instance(&name, handle, class_handle) {
                     self.push(method);
                     return
                 }
@@ -636,7 +639,26 @@ impl VM {
     /// GC wrapper that handles rooting.
     ///
     fn allocate(&mut self, object: Object) -> Handle<Object> {
-        self.heap.insert(object).into_handle()
+        let handle = self.heap.insert(object).into_handle();
+        if self.heap.len() * ::std::mem::size_of::<Object>() >= self.next_gc {
+            self.next_gc *= HEAP_GROWTH;
+            // Root everything on the stack as well as all closures in the current
+            // set of callframes, upvalues in scope, and globals.
+            // let frame_iter = self.frames.iter().map(|f| f.closure.into());
+            let upvalue_iter = self.open_upvalues.iter()
+                .flat_map(|u| u.get().ok())
+                .flat_map(|v| v.as_object());
+            let globals_iter = self.globals.values().flat_map(Value::as_object);
+            let stack_iter = self.stack.iter().flat_map(Value::as_object);
+
+            let exclude = stack_iter
+                .chain(Some(handle))
+                .chain(globals_iter)
+                .chain(upvalue_iter);
+
+            self.heap.clean_excluding(exclude);
+        }
+        handle
     }
 }
 
