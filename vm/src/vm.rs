@@ -79,8 +79,7 @@ impl CallFrame {
         where
             F: FnOnce(&Chunk) -> T
     {
-        let function = self.closure.function();
-        fun(function.chunk())
+        fun(self.closure.chunk())
     }
 }
 
@@ -341,7 +340,7 @@ impl VM {
         if let Some(o) = callee.deref(&self.heap) {
             match o {
                 Object::LoxClosure(ref closure) => {
-                    if closure.arity != arity {
+                    if closure.arity() != arity {
                         self.runtime_error(RuntimeError::BadArgs);
                     }
                     let frame = CallFrame::new(closure.clone(), frame_start);

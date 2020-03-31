@@ -28,6 +28,33 @@ impl Trace<Self> for Object {
     }
 }
 
+pub struct LoxFunctionBuilder {
+    name: String,
+    chunk: Chunk,
+    arity: u8,
+    upvalue_count: usize,
+}
+
+impl LoxFunctionBuilder {
+    pub fn new(name: &str, arity: u8) -> Self {
+        let name: String = name.into();
+        let chunk = Chunk::new(name.clone());
+        LoxFunctionBuilder { name, arity, chunk, upvalue_count: 0 }
+    }
+
+    pub fn chunk_mut(&mut self) -> &mut Chunk {
+        &mut self.chunk
+    }
+
+    pub fn set_upvalue_count(&mut self, count: usize) {
+        self.upvalue_count = count;
+    }
+
+    pub fn build(self) -> LoxFunction {
+        LoxFunction::new(self)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct LoxFunction {
     name: String,
@@ -37,10 +64,13 @@ pub struct LoxFunction {
 }
 
 impl LoxFunction {
-    pub fn new(name: &str, arity: u8) -> Self {
-        let name: String = name.into();
-        let chunk = Chunk::new(name.clone());
-        LoxFunction { name, arity, chunk, upvalue_count: 0 }
+    fn new(builder: LoxFunctionBuilder) -> Self {
+        LoxFunction {
+            name: builder.name,
+            arity: builder.arity,
+            chunk: builder.chunk,
+            upvalue_count: builder.upvalue_count,
+        }
     }
 
     pub fn name(&self) -> &str {
@@ -49,14 +79,6 @@ impl LoxFunction {
 
     pub fn chunk(&self) -> &Chunk {
         &self.chunk
-    }
-
-    pub fn chunk_mut(&mut self) -> &mut Chunk {
-        &mut self.chunk
-    }
-
-    pub fn set_upvalue_count(&mut self, count: usize) {
-        self.upvalue_count = count;
     }
 
     pub fn upvalue_count(&self) -> usize {
@@ -81,21 +103,22 @@ pub struct NativeFunction {
 pub struct LoxClosure {
     function: LoxFunction,
     upvalues: Vec<LoxUpValue>,
-    pub arity: u8,
 }
 
 impl LoxClosure {
     pub fn new(function: LoxFunction, upvalues: Vec<LoxUpValue>) -> Self {
-        let arity = function.arity;
         LoxClosure {
             function,
             upvalues,
-            arity,
         }
     }
 
-    pub fn function(&self) -> &LoxFunction {
-        &self.function
+    pub fn arity(&self) -> u8 {
+        self.function.arity
+    }
+
+    pub fn chunk(&self) -> &Chunk {
+        self.function.chunk()
     }
 
     pub fn upvalue_count(&self) -> usize {
@@ -186,10 +209,6 @@ impl Object {
                 function,
             },
         )
-    }
-
-    pub fn string(string: String) -> Self {
-        Object::String(string)
     }
 
     pub fn as_function(&self) -> Option<&LoxFunction> {

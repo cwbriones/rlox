@@ -3,7 +3,7 @@ use chunk::{Chunk, Op};
 use broom::Heap;
 
 use gc::value::Value;
-use gc::object::{Object, LoxFunction};
+use gc::object::{Object, LoxFunction, LoxFunctionBuilder};
 
 use parser::ast::*;
 
@@ -29,13 +29,13 @@ struct CompileState {
     line: usize,
     locals: Vec<Local>,
     upvalues: Vec<UpValue>,
-    function: LoxFunction,
+    function: LoxFunctionBuilder,
     scope_depth: usize,
     breaks: Vec<usize>,
 }
 
 impl CompileState {
-    fn new(function: LoxFunction, scope_depth: usize) -> Self {
+    fn new(function: LoxFunctionBuilder, scope_depth: usize) -> Self {
         // Reserve the first local
         let locals = vec![Local { name: "".into(), depth: 0, captured: false}];
         let upvalues = Vec::new();
@@ -454,7 +454,7 @@ impl<'g> Compiler<'g> {
     }
 
     fn start_function(&mut self, name: &str, arity: u8, scope: usize) {
-        let next_function = LoxFunction::new(name, arity);
+        let next_function = LoxFunctionBuilder::new(name, arity);
         let state = CompileState::new(next_function, scope);
         self.states.push(state);
     }
@@ -465,11 +465,11 @@ impl<'g> Compiler<'g> {
         let mut state = self.states.pop().expect("states to be nonempty");
         #[cfg(feature="dis")]
         {
-            self.dissassemble(state.function.chunk());
+            self.dissassemble(state.function.chunk_mut());
         }
         state.function.set_upvalue_count(state.upvalues.len());
         // TODO: This should be removed instead of copied so that it cannot be used again.
-        state.function
+        state.function.build()
     }
 
     #[cfg(feature="dis")]
