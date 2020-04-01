@@ -54,27 +54,7 @@ use std::fmt::{self, Display};
 
 impl<'s> Display for TokenType<'s> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let string = match *self {
-            TokenType::LeftParen => "'('",
-            TokenType::RightParen => "')'",
-            TokenType::LeftBrace => "'{'",
-            TokenType::RightBrace => "'}'",
-            TokenType::Comma => "','",
-            TokenType::Dot => "'.'",
-            TokenType::Minus => "'-'",
-            TokenType::Plus => "'+'",
-            TokenType::Semicolon => "';'",
-            TokenType::Star => "'*'",
-            TokenType::Bang => "'!'",
-            TokenType::BangEq => "'!='",
-            TokenType::Equal => "'='",
-            TokenType::EqualEq => "'=='",
-            TokenType::LessThan => "'<'",
-            TokenType::LessThanEq => "'<='",
-            TokenType::GreaterThan => "'>'",
-            TokenType::GreaterThanEq => "'>='",
-            TokenType::Slash => "'/'",
-            TokenType::Comment => "<comment>",
+        match *self {
             TokenType::String(ref s) => {
                 write!(f, "{:?}", s)?;
                 return Ok(());
@@ -83,14 +63,12 @@ impl<'s> Display for TokenType<'s> {
                 write!(f, "number '{}'", n)?;
                 return Ok(());
             },
-            TokenType::Identifier => "identifier",
             TokenType::Keyword(kw) => {
                 write!(f, "keyword '{}'", kw)?;
                 return Ok(());
             }
-            TokenType::EOF => "EOF",
-        };
-        write!(f, "{}", string)
+            _ => write!(f, "{}", self.name()),
+        }
     }
 }
 
@@ -126,6 +104,36 @@ impl<'s> TokenType<'s> {
             _ => None
         }
     }
+
+    pub fn name(&self) -> &'static str {
+        match *self {
+            TokenType::LeftParen => "'('",
+            TokenType::RightParen => "')'",
+            TokenType::LeftBrace => "'{'",
+            TokenType::RightBrace => "'}'",
+            TokenType::Comma => "','",
+            TokenType::Dot => "'.'",
+            TokenType::Minus => "'-'",
+            TokenType::Plus => "'+'",
+            TokenType::Semicolon => "';'",
+            TokenType::Star => "'*'",
+            TokenType::Bang => "'!'",
+            TokenType::BangEq => "'!='",
+            TokenType::Equal => "'='",
+            TokenType::EqualEq => "'=='",
+            TokenType::LessThan => "'<'",
+            TokenType::LessThanEq => "'<='",
+            TokenType::GreaterThan => "'>'",
+            TokenType::GreaterThanEq => "'>='",
+            TokenType::Slash => "'/'",
+            TokenType::Comment => "<comment>",
+            TokenType::String(_) => "string",
+            TokenType::Number(_) => "number",
+            TokenType::Identifier => "identifier",
+            TokenType::Keyword(kw) => kw.name(),
+            TokenType::EOF => "EOF",
+        }
+    }
 }
 
 #[derive(PartialEq, Eq, Debug, Clone, Copy)]
@@ -150,7 +158,7 @@ pub enum Keyword {
 }
 
 impl Keyword {
-    fn as_str(&self) -> &'static str {
+    fn name(&self) -> &'static str {
         match *self {
             Keyword::Class  => "class",
             Keyword::Var    => "var",
@@ -175,7 +183,7 @@ impl Keyword {
 
 impl Display for Keyword {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.as_str())
+        write!(f, "{}", self.name())
     }
 }
 

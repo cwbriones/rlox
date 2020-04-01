@@ -7,9 +7,11 @@ pub enum SyntaxError {
     #[fail(display = "Unterminated string.")]
     UnterminatedString,
     #[fail(display = "Expect {} after {}.", _0, _1)]
-    Missing(String, &'static str),
-    #[fail(display = "Expect expression.")]
-    PrimaryFailure,
+    ExpectAfter(&'static str, &'static str),
+    #[fail(display = "Expect {} before {}.", _0, _1)]
+    ExpectBefore(&'static str, &'static str),
+    #[fail(display = "Expect {}.", _0)]
+    Expect(&'static str),
     #[fail(display = "Invalid assignment target.")]
     InvalidAssignment,
     #[fail(display = "Cannot have more than 8 arguments.")]

@@ -175,7 +175,7 @@ impl<'t> Parser<'t> {
                     // ahead we could fallback to a expression statement
                     // and this would already be handled.
                     let decl = self.function_declaration()?;
-                    self.expect(TokenType::Semicolon, "lambda expression")?;
+                    self.expect(TokenType::Semicolon).after("lambda expression")?;
                     let pos = keyword.position;
                     let node = ExprKind::function(decl);
                     Ok(Stmt::Expr(Expr{ pos, node }))
@@ -186,16 +186,18 @@ impl<'t> Parser<'t> {
     }
 
     fn class_decl(&mut self) -> Result<Stmt> {
-        // FIXME: These errors are wonky.
-        let ident = self.expect(TokenType::Identifier, "keyword 'class'")?;
+        let ident =
+            self.expect(TokenType::Identifier).after("keyword 'class'")?;
         let superclass = if let TokenType::LessThan = self.peek_type()? {
             self.advance()?;
-            let superclass_ident = self.expect(TokenType::Identifier, "<")?;
+            let superclass_ident = self.expect(TokenType::Identifier)
+                .alias_as("superclass name")
+                .check()?;
             Some(Variable::new_local(superclass_ident.value))
         } else {
             None
         };
-        self.expect(TokenType::LeftBrace, "class name")?;
+        self.expect(TokenType::LeftBrace).after("class name")?;
         let mut methods = Vec::new();
         let mut class_methods = Vec::new();
         loop {
@@ -209,25 +211,27 @@ impl<'t> Parser<'t> {
                 methods.push(self.function_statement()?);
             }
         }
-        self.expect(TokenType::RightBrace, "method declarations")?;
+        self.expect(TokenType::RightBrace).after("method declarations")?;
         Ok(Stmt::class(ident.value, methods, class_methods, superclass))
     }
 
     fn function_statement(&mut self) -> Result<FunctionStmt> {
-        let ident = self.expect(TokenType::Identifier, "function name")?;
+        let ident =
+            self.expect(TokenType::Identifier).after("function name")?;
         let decl = self.function_declaration()?;
         Ok(FunctionStmt::new(ident.value, decl))
     }
 
     fn function_declaration(&mut self) -> Result<FunctionDecl> {
         // FIXME: These errors are weird.
-        self.expect(TokenType::LeftParen, "function name")?;
+        self.expect(TokenType::LeftParen).after("function name")?;
         let mut parameters = Vec::new();
         match self.peek_type()? {
             TokenType::RightParen => {},
             _ => {
                 loop {
-                    let param = self.expect(TokenType::Identifier, "Expect parameters")?;
+                    let param =
+                        self.expect(TokenType::Identifier).after("parameters")?;
                     parameters.push(Variable::new_global(param.value.into()));
                     if parameters.len() > MAX_NUM_PARAMETERS {
                         // FIXME: This shouldn't stop parsing the function
@@ -241,15 +245,16 @@ impl<'t> Parser<'t> {
                 }
             },
         }
-        self.expect(TokenType::RightParen, "parameters")?;
-        self.expect(TokenType::LeftBrace, "function parameters")?;
+        self.expect(TokenType::RightParen).after("parameters")?;
+        self.expect(TokenType::LeftBrace).before("function body")?;
         let block = self.block()?;
         Ok(FunctionDecl::new(parameters, block))
     }
 
     // varDecl → "var" IDENTIFIER ( "=" expression )? ";" ;
     fn var_decl(&mut self) -> Result<Stmt> {
-        let ident = self.expect(TokenType::Identifier, "keyword 'var'")?;
+        let ident =
+            self.expect(TokenType::Identifier).after("keyword 'var'")?;
         let mut initializer = Expr {
             pos: ident.position,
             node: ExprKind::Literal(Literal::Nil)
@@ -258,7 +263,7 @@ impl<'t> Parser<'t> {
             self.advance()?;
             initializer = self.expression()?;
         }
-        self.expect(TokenType::Semicolon, "variable declaration")?;
+        self.expect(TokenType::Semicolon).after("variable declaration")?;
         Ok(Stmt::var(ident.value, initializer))
     }
 
@@ -290,7 +295,7 @@ impl<'t> Parser<'t> {
             },
             TokenType::Keyword(Keyword::Break) => {
                 self.advance()?;
-                self.expect(TokenType::Semicolon, "Expected ';' after break")?;
+                self.expect(TokenType::Semicolon).after("break")?;
                 Ok(Stmt::Break)
             },
             TokenType::LeftBrace => {
@@ -303,7 +308,7 @@ impl<'t> Parser<'t> {
 
     fn print_statement(&mut self) -> Result<Stmt> {
         let value = self.expression()?;
-        self.expect(TokenType::Semicolon, "value")?;
+        self.expect(TokenType::Semicolon).after("expression")?;
         Ok(Stmt::Print(value))
     }
 
@@ -313,14 +318,14 @@ impl<'t> Parser<'t> {
         } else {
             Some(self.expression()?)
         };
-        self.expect(TokenType::Semicolon, "return")?;
+        self.expect(TokenType::Semicolon).after("return")?;
         Ok(Stmt::Return(expr))
     }
 
     fn if_statement(&mut self) -> Result<Stmt> {
-        self.expect(TokenType::LeftParen, "if")?;
+        self.expect(TokenType::LeftParen).after("if")?;
         let cond = self.expression()?;
-        self.expect(TokenType::RightParen, "if condition")?;
+        self.expect(TokenType::RightParen).after("if condition")?;
         let then_clause = self.declaration()?;
         if let TokenType::Keyword(Keyword::Else) = self.peek_type()? {
             self.advance()?;
@@ -332,15 +337,16 @@ impl<'t> Parser<'t> {
     }
 
     fn while_statement(&mut self) -> Result<Stmt> {
-        self.expect(TokenType::LeftParen, "while")?;
+        self.expect(TokenType::LeftParen).after("while")?;
         let cond = self.expression()?;
-        self.expect(TokenType::RightParen, "while condition")?;
-        let body = self.statement()?;
-		Ok(Stmt::While(cond, Box::new(body)))
+        self.expect(TokenType::RightParen).after("while condition")?;
+        let body = self.statement()
+            .map_err(|_| SyntaxError::Expect("expression"))?;
+        Ok(Stmt::While(cond, Box::new(body)))
     }
 
     fn for_statement(&mut self) -> Result<Stmt> {
-        self.expect(TokenType::LeftParen, "for")?;
+        self.expect(TokenType::LeftParen).after("for")?;
         let init = match self.peek_type()? {
             TokenType::Semicolon => {
                 self.advance()?;
@@ -357,13 +363,16 @@ impl<'t> Parser<'t> {
             TokenType::Semicolon => None,
             _ => Some(self.expression()?),
         };
-        let condition_pos = self.expect(TokenType::Semicolon, "for condition")?.position;
+        let condition_pos =
+            self.expect(TokenType::Semicolon)
+                .after("for conditon")?
+                .position;
 
         let increment = match self.peek_type()? {
             TokenType::RightParen => None,
             _ => Some(self.expression()?),
         };
-        self.expect(TokenType::RightParen, "for clause")?;
+        self.expect(TokenType::RightParen).after("for clause")?;
 
         let mut body = self.statement()?;
 
@@ -401,18 +410,13 @@ impl<'t> Parser<'t> {
         }
     }
 
-    fn expect(&mut self, token_type: TokenType, before: &'static str) -> Result<Token<'t>> {
-        if self.peek_type()? == token_type {
-            let tok = self.advance()?;
-            Ok(tok)
-        } else {
-            Err(SyntaxError::Missing(token_type.to_string(), before))
-        }
+    fn expect<'a>(&'a mut self, expected: TokenType<'t>) -> Expect<'a, 't> {
+        Expect::new(self, expected)
     }
 
     fn expression_statement(&mut self) -> Result<Stmt> {
         let expr = self.expression()?;
-        self.expect(TokenType::Semicolon, "value")?;
+        self.expect(TokenType::Semicolon).after("expression")?;
         Ok(Stmt::Expr(expr))
     }
 
@@ -480,7 +484,9 @@ impl<'t> Parser<'t> {
                 },
                 TokenType::Dot => {
                     let pos = self.advance()?.position;
-                    let name = self.expect(TokenType::Identifier, "'.'")?;
+                    let name = self.expect(TokenType::Identifier)
+                        .alias_as("property name")
+                        .after("'.'")?;
                     let node = ExprKind::get(expr, name.value);
                     expr = Expr { node, pos };
                 },
@@ -511,7 +517,7 @@ impl<'t> Parser<'t> {
             },
         }
 
-        let paren = self.expect(TokenType::RightParen, "arguments")?;
+        let paren = self.expect(TokenType::RightParen).after("arguments")?;
         Ok(Expr {
             pos: callee.pos,
             node: ExprKind::call(callee, paren.position, arguments)
@@ -526,8 +532,11 @@ impl<'t> Parser<'t> {
         match peek_type {
             TokenType::Keyword(Keyword::Super) => {
                 let keyword = self.advance()?;
-                self.expect(TokenType::Dot, "keyword 'super'")?;
-                let ident = self.expect(TokenType::Identifier, "superclass method name")?;
+                self.expect(TokenType::Dot).after("'super'")?;
+                let ident =
+                    self.expect(TokenType::Identifier)
+                        .alias_as("superclass method name")
+                        .check()?;
                 let var = Variable::new_local("super");
                 let node = ExprKind::Super(var, keyword.position, ident.value.to_owned());
                 let pos = keyword.position;
@@ -570,7 +579,7 @@ impl<'t> Parser<'t> {
             TokenType::LeftParen => {
                 let pos = self.advance()?.position;
                 let expr = self.expression()?;
-                self.expect(TokenType::RightParen, "expression")?;
+                self.expect(TokenType::RightParen).after("expression")?;
                 let node = ExprKind::Grouping(Box::new(expr));
                 Ok(Expr { node, pos })
             },
@@ -589,7 +598,7 @@ impl<'t> Parser<'t> {
                     pos: token.position
                 })
             },
-            _ => Err(SyntaxError::PrimaryFailure)
+            _ => Err(SyntaxError::Expect("expression"))
         }
     }
 
@@ -642,6 +651,57 @@ impl<'t> Parser<'t> {
             Some(&Err(ref err)) => Err(err.clone()),
             None => Ok(TokenType::EOF),
         }
+    }
+}
+
+struct Expect<'a, 't> {
+    parser: &'a mut Parser<'t>,
+    expected: TokenType<'t>,
+    alias: Option<&'static str>,
+}
+
+impl<'a, 't> Expect<'a, 't> {
+    fn new(parser: &'a mut Parser<'t>, expected: TokenType<'t>) -> Self {
+        Self {
+            parser,
+            expected,
+            alias: None,
+        }
+    }
+}
+
+macro_rules! impl_expected {
+    ($sel:ident) => {
+        {
+            if $sel.parser.peek_type()? == $sel.expected {
+                return $sel.parser.advance();
+            }
+            $sel.alias
+                .map(|s| s)
+                .unwrap_or_else(|| $sel.expected.name())
+        }
+    }
+}
+
+impl<'a, 't> Expect<'a, 't> {
+    fn alias_as(mut self, name: &'static str) -> Self {
+        self.alias = Some(name);
+        self
+    }
+
+    fn after(self, message: &'static str) -> Result<Token<'t>> {
+        let expected = impl_expected!(self);
+        Err(SyntaxError::ExpectAfter(expected, message))
+    }
+
+    fn before(self, message: &'static str) -> Result<Token<'t>> {
+        let expected = impl_expected!(self);
+        Err(SyntaxError::ExpectBefore(expected, message))
+    }
+
+    fn check(self) -> Result<Token<'t>> {
+        let expected = impl_expected!(self);
+        Err(SyntaxError::Expect(expected))
     }
 }
 
