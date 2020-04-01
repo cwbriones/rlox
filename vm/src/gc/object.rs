@@ -28,6 +28,7 @@ impl Trace<Self> for Object {
     }
 }
 
+#[derive(Debug)]
 pub struct LoxFunctionBuilder {
     name: String,
     chunk: Chunk,

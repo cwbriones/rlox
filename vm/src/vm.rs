@@ -69,13 +69,6 @@ impl CallFrame {
         self.with_chunk(|c| *c.get_constant(idx).unwrap())
     }
 
-    fn with_closure<F, T>(&mut self, fun: F) -> T
-        where
-            F: FnOnce(&mut LoxClosure) -> T
-    {
-        fun(&mut self.closure)
-    }
-
     pub fn with_chunk<F, T>(&self, fun: F) -> T
         where
             F: FnOnce(&Chunk) -> T
@@ -97,24 +90,25 @@ macro_rules! binary_op {
     }
 }
 
-#[repr(u8)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub enum RuntimeError {
     DivideByZero,
     ArgumentNotANumber,
     ArgumentNotAString,
     BadCall,
-    BadArgs,
+    BadArgs(u8, u8),
+    UndefinedVariable(String),
 }
 
-impl RuntimeError {
-    pub fn cause(&self) -> &'static str {
+impl ::std::fmt::Display for RuntimeError {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
         match *self {
-            RuntimeError::DivideByZero => "divide by zero",
-            RuntimeError::ArgumentNotANumber => "Operands must be numbers",
-            RuntimeError::ArgumentNotAString => "argument is not a string",
-            RuntimeError::BadCall => "value is not callable",
-            RuntimeError::BadArgs => "Wrong number of arguments",
+            RuntimeError::DivideByZero => write!(f, "divide by zero"),
+            RuntimeError::ArgumentNotANumber => write!(f, "Operands must be numbers"),
+            RuntimeError::ArgumentNotAString => write!(f, "argument is not a string"),
+            RuntimeError::BadCall => write!(f, "Can only call functions and classes"),
+            RuntimeError::BadArgs(expected, got) => write!(f, "Expected {} arguments but got {}", expected, got),
+            RuntimeError::UndefinedVariable(ref var) => write!(f, "Undefined variable '{}'", var),
         }
     }
 }
@@ -260,9 +254,12 @@ impl VM {
 
         if let Variant::Obj(h) = val.decode() {
             if let Some(&Object::String(ref s)) = self.heap.get(h) {
-                let val = *self.globals.get(s).expect("undefined global");
-                self.push(val);
-                return;
+                if let Some(val) = self.globals.get(s).cloned() {
+                    self.push(val);
+                    return;
+                } else {
+                    self.runtime_error(RuntimeError::UndefinedVariable(s.clone()));
+                }
             }
         }
         panic!("GET_GLOBAL constant was not a string");
@@ -342,7 +339,7 @@ impl VM {
             match o {
                 Object::LoxClosure(ref closure) => {
                     if closure.arity() != arity {
-                        self.runtime_error(RuntimeError::BadArgs);
+                        self.runtime_error(RuntimeError::BadArgs(closure.arity(), arity));
                     }
                     let frame = CallFrame::new(closure.clone(), frame_start);
                     self.frames.push(frame);
@@ -350,7 +347,7 @@ impl VM {
                 },
                 &Object::NativeFunction(ref native) => {
                     if native.arity != arity {
-                        self.runtime_error(RuntimeError::BadArgs);
+                        self.runtime_error(RuntimeError::BadArgs(native.arity, arity));
                     }
                     let val = {
                         (native.function)(&self.stack[frame_start..])
@@ -367,13 +364,13 @@ impl VM {
 
     fn ret(&mut self) {
         if let Some(frame) = self.frames.pop() {
-            let val = self.pop(); // return value
+            let retval = self.pop(); // return value
             if frame.stack_start < self.stack.len() {
                 self.close_upvalues(frame.stack_start);
             }
             // Remove all arguments off the stack
             self.stack.truncate(frame.stack_start);
-            self.push(val);
+            self.push(retval);
             return;
         }
         panic!("Cannot return from top-level.");
@@ -387,18 +384,18 @@ impl VM {
 
     fn get_upvalue(&mut self) {
         let idx = self.frame_mut().read_byte();
-        let val = self.frame_mut().with_closure(|cl| {
-            cl.get(idx as usize).get()
-        }).unwrap_or_else(|i| self.stack[i]);
+        let val = self.current_closure()
+            .get(idx as usize)
+            .get()
+            .unwrap_or_else(|i| self.stack[i]);
         self.push(val);
     }
 
     fn set_upvalue(&mut self) {
         let val = self.peek();
         let idx = self.frame_mut().read_byte();
-        let res = self.frame_mut().with_closure(|cl| {
-            cl.get(idx as usize).set(val)
-        });
+        let closure = self.current_closure();
+        let res = closure.get(idx as usize).set(val);
         if let Err(i) = res {
             self.stack[i] = val;
         }
@@ -413,10 +410,12 @@ impl VM {
                 let is_local = self.read_byte() > 0;
                 let idx = self.read_byte() as usize;
                 let upvalue = if is_local {
+                    // This upvalue is local and so this closure may need to capture it
+                    // to ensure that the reference will continue to be valid.
                     self.capture_upvalue(idx)
                 } else {
-                    // Re-use from the current closure
-                    self.frame_mut().with_closure(|c| c.get(idx))
+                    // This value has been previously captured across some enclosing scope.
+                    self.current_closure().get(idx)
                 };
                 upvalues.push(upvalue);
             }
@@ -426,6 +425,10 @@ impl VM {
             return;
         }
         panic!("closure argument should be a function");
+    }
+
+    fn current_closure(&mut self) -> &mut LoxClosure {
+        &mut self.frame_mut().closure
     }
 
     fn capture_upvalue(&mut self, idx: usize) -> LoxUpValue {
@@ -442,6 +445,8 @@ impl VM {
     }
 
     fn close_upvalues(&mut self, stack_end: usize) {
+        // close all upvalues that are about to be invalidated and remove them from
+        // the list of open upvalues.
         let mut open_upvalues = Vec::new();
         ::std::mem::swap(&mut self.open_upvalues, &mut open_upvalues);
         for mut up in open_upvalues {
@@ -479,7 +484,7 @@ impl VM {
     }
 
     fn runtime_error(&self, err: RuntimeError) {
-        eprintln!("[error]: {}.", err.cause());
+        eprintln!("[error]: {}.", err);
         for frame in self.frames.iter().rev() {
             let ip = frame.ip;
             frame.with_chunk(|chunk| {

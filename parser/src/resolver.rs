@@ -41,14 +41,15 @@ impl Scopes {
         let scope_len = self.scopes.len();
         // We skip the first scope to treat it as global.
         let scopes_iter = self.scopes.iter().skip(1).rev();
-        // How many scopes are within the current function?
+        // What is the depth of this variable relative to the top-level scope of the enclosing
+        // function?
         // This is used to track if a var is being closed over.
-        let function_size = self.scopes.len() - self.function_start() - 1;
+        let function_depth = self.scopes.len() - self.function_start() - 1;
 
         for (depth, scope) in scopes_iter.enumerate() {
             if scope.contains_key(var.name()) {
-                var.resolve_local(depth, function_size);
-                debug!("[scope={}] var '{}' resolved to depth={} function_size={}", scope_len, var.name(), depth + 1, function_size);
+                var.resolve_local(depth, function_depth);
+                debug!("[scope={}] var '{}' resolved to depth={} function_depth={}", scope_len, var.name(), depth + 1, function_depth);
                 return;
             }
         }

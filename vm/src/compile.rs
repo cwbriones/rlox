@@ -25,6 +25,7 @@ struct UpValue {
     pub is_local: bool,
 }
 
+#[derive(Debug)]
 struct CompileState {
     line: usize,
     locals: Vec<Local>,
@@ -59,14 +60,7 @@ impl CompileState {
         None
     }
 
-    fn resolve_local(&mut self, var: &str, depth: usize) -> u8 {
-        for (i, local) in self.locals.iter().enumerate().rev() {
-            if local.name == var {
-                return i as u8;
-            }
-        }
-
-        // No local was found, assign a new one.
+    fn add_local(&mut self, var: &str, depth: usize) -> u8 {
         let depth = self.scope_depth - depth;
         if self.locals.len() == ::std::u8::MAX as usize {
             panic!("TOO MANY LOCAL VARIABLES");
@@ -77,10 +71,21 @@ impl CompileState {
             captured: false,
         });
 
-        debug!("RESOLVE LOCAL: {} @ {}", var, depth);
-        debug!("CURRENT      : {:?}", self.locals);
+        let i = (self.locals.len() - 1) as u8;
+        debug!("resolved to new local #{}", i);
+        i
+    }
 
-        (self.locals.len() - 1) as u8
+    fn resolve_local(&mut self, var: &str) -> u8 {
+        debug!("scope_depth: {}, resolve_local {}", self.scope_depth, var);
+        debug!("scope_depth: {}, current locals {:?}", self.scope_depth, self.locals);
+        for (i, local) in self.locals.iter().enumerate().rev() {
+            if local.name == var {
+                debug!("resolved {} to local #{}", var, i);
+                return i as u8;
+            }
+        }
+        panic!("unresolved local");
     }
 
     fn add_upvalue(&mut self, index: u8, is_local: bool) -> u8 {
@@ -116,6 +121,7 @@ impl CompileState {
             } else {
                 ops.push(Op::Pop);
             }
+            debug!("end_scope: remove local {:?}", local);
             false
         });
         ops.into_iter().rev().for_each(|op| self.emit(op));
@@ -282,8 +288,8 @@ impl<'g> Compiler<'g> {
                 }
                 match var.scope() {
                     Scope::Global => self.set_global(var.name()),
-                    Scope::Local(d) => {
-                        let idx = self.state_mut().resolve_local(var.name(), d);
+                    Scope::Local(_) => {
+                        let idx = self.state_mut().resolve_local(var.name());
                         self.emit(Op::SetLocal);
                         self.emit_byte(idx);
                     },
@@ -312,6 +318,7 @@ impl<'g> Compiler<'g> {
             self.emit_byte(idx);
             return;
         }
+        debug!("var_get {:?}", var);
         match var.scope() {
             Scope::Global => {
                 self.emit(Op::GetGlobal);
@@ -324,8 +331,8 @@ impl<'g> Compiler<'g> {
                 };
                 self.emit_byte(idx);
             },
-            Scope::Local(d) => {
-                let idx = self.state_mut().resolve_local(var.name(), d);
+            Scope::Local(_) => {
+                let idx = self.state_mut().resolve_local(var.name());
                 self.emit(Op::GetLocal);
                 self.emit_byte(idx);
             },
@@ -333,6 +340,7 @@ impl<'g> Compiler<'g> {
     }
 
     fn var_define(&mut self, var: &Variable) {
+        debug!("var_define {:?}", var);
         match var.scope() {
             Scope::Global => {
                 self.emit(Op::DefineGlobal);
@@ -347,7 +355,8 @@ impl<'g> Compiler<'g> {
             },
             Scope::Local(d) => {
                 // Declarations do not need to call have a SET_LOCAL instruction.
-                self.state_mut().resolve_local(var.name(), d);
+                self.state_mut().add_local(var.name(), d);
+                self.state_mut().resolve_local(var.name());
             },
         }
     }
@@ -395,7 +404,8 @@ impl<'g> Compiler<'g> {
         // Now that we've pushed to states we are in a new scope.
 
         for p in parameters {
-            self.state_mut().resolve_local(p.name(), 0);
+            self.state_mut().add_local(p.name(), 0);
+            self.state_mut().resolve_local(p.name());
         }
         for stmt in body {
             self.compile_stmt(stmt);
