@@ -6,13 +6,14 @@ use broom::prelude::Trace;
 use broom::prelude::Tracer;
 
 use std::fmt::{Debug, Display};
+use std::rc::Rc;
+use std::cell::RefCell;
 
 #[derive(Clone)]
 pub enum Object {
     String(String),
     LoxFunction(LoxFunction),
     LoxClosure(LoxClosure),
-    LoxUpValue(LoxUpValue),
     NativeFunction(NativeFunction),
 }
 
@@ -22,7 +23,6 @@ impl Trace<Self> for Object {
             Object::String(_) => {},
             Object::LoxFunction(f) => f.trace(tracer),
             Object::NativeFunction(_) => {},
-            Object::LoxUpValue(_) => {},
             Object::LoxClosure(c) => c.trace(tracer),
         }
     }
@@ -126,77 +126,51 @@ impl LoxClosure {
     }
 
     pub fn get(&self, idx: usize) -> LoxUpValue {
-        self.upvalues[idx]
-    }
-
-    pub fn get_in(&self, idx: usize) -> Value {
-        // FIXME(unsafe)
-        // ugh...
-        unsafe {
-            self.upvalues[idx].get()
-        }
-    }
-
-    pub fn set(&mut self, idx: usize, upvalue: LoxUpValue) {
-        self.upvalues[idx] = upvalue;
-    }
-
-    pub fn set_in(&mut self, idx: usize, value: Value) {
-        self.upvalues[idx].value = value;
+        self.upvalues[idx].clone()
     }
 }
 
 impl Trace<Object> for LoxClosure {
     fn trace(&self, tracer: &mut Tracer<Object>) {
         self.function.trace(tracer);
-        self.upvalues.trace(tracer);
+        self.upvalues.iter()
+            .flat_map(|u| u.get())
+            .for_each(|v| v.trace(tracer));
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct LoxUpValue {
-    value: Value,
-    local: *mut Value,
-    closed: bool,
-}
-
-impl Trace<Object> for LoxUpValue {
-    fn trace(&self, tracer: &mut Tracer<Object>) {
-        if let Some(o) = self.value.as_object() {
-            o.trace(tracer)
-        }
-        // We don't need to trace local since if it's valid then it's still rooted on the stack.
-    }
+    inner: Rc<RefCell<Result<Value, usize>>>,
 }
 
 impl LoxUpValue {
-    pub fn new(local: *mut Value) -> Self {
+    pub fn new(local: usize) -> Self {
         LoxUpValue {
-            value: Value::nil(),
-            local,
-            closed: false,
+            inner: Rc::new(RefCell::new(Err(local))),
         }
     }
 
-    pub fn is(&self, other: *mut Value) -> bool {
-        other == self.local
-    }
-
-    pub fn local(&self) -> *mut Value {
-        self.local
-    }
-
-    pub unsafe fn close(&mut self) {
-        self.closed = true;
-        self.value = *self.local;
-    }
-
-    pub unsafe fn get(&self) -> Value {
-        if self.closed {
-            self.value
-        } else {
-            *self.local
+    pub fn close<F: FnOnce(usize) -> Value>(&mut self, f: F) {
+        let mut inner = self.inner.borrow_mut();
+        if let Err(e) = *inner {
+            *inner = Ok(f(e))
         }
+    }
+
+    pub fn as_local(&self) -> Option<usize> {
+        self.inner.borrow().err()
+    }
+
+    pub fn get(&self) -> Result<Value, usize> {
+        self.inner.borrow().clone()
+    }
+
+    pub fn set(&mut self, value: Value) -> Result<(), usize> {
+        let mut inner = self.inner.borrow_mut();
+        (*inner)?;
+        *inner = Ok(value);
+        Ok(())
     }
 }
 
@@ -234,7 +208,6 @@ impl Debug for Object {
             Object::String(ref s) => write!(f, "{:?}", s),
             Object::LoxFunction(ref fun) => write!(f, "<function: {:?}>", fun.name),
             Object::LoxClosure(ref cl) => write!(f, "<closure {:?}>", cl.function),
-            Object::LoxUpValue(ref up) => write!(f, "<upvalue [{:?}]>", up.value),
             Object::NativeFunction(ref na) => write!(f, "<native fn {:?}>", na.name),
         }
     }
@@ -246,7 +219,6 @@ impl Display for Object {
             Object::String(ref s) => write!(f, "{}", s),
             Object::LoxFunction(ref fun) => write!(f, "<fn '{}'>", fun.name),
             Object::LoxClosure(ref cl) => write!(f, "<closure '{:?}'>", cl.function),
-            Object::LoxUpValue(ref up) => write!(f, "{}", up.value),
             Object::NativeFunction(ref na) => write!(f, "<native fn '{}'>", na.name),
         }
     }

@@ -5,6 +5,7 @@ use broom::Handle;
 
 use chunk::Chunk;
 use compile::Compiler;
+
 use gc::object::Object;
 use gc::object::LoxClosure;
 use gc::object::LoxUpValue;
@@ -386,33 +387,38 @@ impl VM {
 
     fn get_upvalue(&mut self) {
         let idx = self.frame_mut().read_byte();
-        let val = self.frame_mut().with_closure(|cl| cl.get_in(idx as usize));
+        let val = self.frame_mut().with_closure(|cl| {
+            cl.get(idx as usize).get()
+        }).unwrap_or_else(|i| self.stack[i]);
         self.push(val);
     }
 
     fn set_upvalue(&mut self) {
         let val = self.peek();
         let idx = self.frame_mut().read_byte();
-        self.frame_mut().with_closure(|cl| cl.set_in(idx as usize, val));
+        let res = self.frame_mut().with_closure(|cl| {
+            cl.get(idx as usize).set(val)
+        });
+        if let Err(i) = res {
+            self.stack[i] = val;
+        }
     }
 
     fn closure(&mut self) {
         let value = self.frame_mut().read_constant();
         if let Some(Object::LoxFunction(f)) = value.deref(&self.heap).cloned() {
             let count = f.upvalue_count();
-            let mut upvalues: Vec<LoxUpValue> = Vec::new();
+            let mut upvalues = Vec::new();
             for _ in 0..count {
                 let is_local = self.read_byte() > 0;
                 let idx = self.read_byte() as usize;
-                if is_local {
-                    // Capture from the local scope
-                    let upvalue = self.capture_upvalue(idx);
-                    upvalues.push(upvalue);
+                let upvalue = if is_local {
+                    self.capture_upvalue(idx)
                 } else {
                     // Re-use from the current closure
-                    let upvalue = self.frame_mut().with_closure(|c| c.get(idx));
-                    upvalues.push(upvalue);
-                }
+                    self.frame_mut().with_closure(|c| c.get(idx))
+                };
+                upvalues.push(upvalue);
             }
             let closure = LoxClosure::new(f.clone(), upvalues);
             let val = self.allocate(Object::LoxClosure(closure)).into();
@@ -423,30 +429,28 @@ impl VM {
     }
 
     fn capture_upvalue(&mut self, idx: usize) -> LoxUpValue {
-        let start = self.frame().stack_start;
-        let local = &self.stack[start + idx] as *const _ as *mut _;
+        let offset = self.frame().stack_start + idx;
         self.open_upvalues.iter().rev().find(|&up| {
-            up.is(local)
+            up.as_local().map(|i| i == offset).unwrap_or(false)
         })
         .cloned()
         .unwrap_or_else(|| {
-            let up = LoxUpValue::new(local);
-            self.open_upvalues.push(up);
+            let up = LoxUpValue::new(offset);
+            self.open_upvalues.push(up.clone());
             up
         })
     }
 
-    fn close_upvalues(&mut self, end: usize) {
-        let stack_end = &self.stack[end] as *const _ as *mut Value;
-        let mut open_upvalues = Vec::with_capacity(self.open_upvalues.len());
-        for up in &mut self.open_upvalues {
-            if up.local() >= stack_end {
-                unsafe { up.close(); }
-                continue;
+    fn close_upvalues(&mut self, stack_end: usize) {
+        let mut open_upvalues = Vec::new();
+        ::std::mem::swap(&mut self.open_upvalues, &mut open_upvalues);
+        for mut up in open_upvalues {
+            // will this blow up?
+            if up.get().map_err(|i| i >= stack_end).is_err() {
+                up.close(|i| self.stack[i]);
+                self.open_upvalues.push(up);
             }
-            open_upvalues.push(*up);
         }
-        self.open_upvalues = open_upvalues;
     }
 
     fn read_byte(&mut self) -> u8 {
