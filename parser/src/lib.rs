@@ -62,12 +62,8 @@ pub fn parse_expr(input: &str) -> ::std::result::Result<Expr, SyntaxError> {
 }
 
 pub fn resolve(stmts: &mut [Stmt]) -> ::std::result::Result<(), Vec<ResolveError>> {
-    let mut resolver = resolver::Resolver::new();
-    resolver.resolve(stmts).map_err(|err| {
-        let mut errs = Vec::new();
-        errs.push(err);
-        errs
-    })
+    let resolver = resolver::Resolver::new();
+    resolver.resolve(stmts)
 }
 
 const MAX_NUM_PARAMETERS: usize = 8;

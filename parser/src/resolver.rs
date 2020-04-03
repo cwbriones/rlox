@@ -7,6 +7,7 @@ pub struct Resolver {
     scopes: Scopes,
     class: Option<ClassType>,
     loop_depth: usize,
+    errors: Vec<ResolveError>,
 }
 
 #[derive(PartialEq, Debug, Clone, Copy)]
@@ -41,8 +42,9 @@ impl Scopes {
         let scope_len = self.scopes.len();
         // We skip the first scope to treat it as global.
         let scopes_iter = self.scopes.iter().skip(1).rev();
-        // What is the depth of this variable relative to the top-level scope of the enclosing
-        // function?
+        // The depth of this variable relative to the top-level scope of the
+        // enclosing function.
+        //
         // This is used to track if a var is being closed over.
         let function_depth = self.scopes.len() - self.function_start() - 1;
 
@@ -137,92 +139,114 @@ impl Resolver {
             scopes: Scopes::new(),
             class: None,
             loop_depth: 0,
+            errors: Vec::new(),
         }
     }
 
-    pub fn resolve(&mut self, stmts: &mut [Stmt]) -> Result {
-        for stmt in stmts {
-            self.resolve_stmt(stmt)?;
+    pub fn resolve(mut self, stmts: &mut [Stmt]) -> ::std::result::Result<(), Vec<ResolveError>> {
+        self.resolve_inner(stmts);
+        if self.errors.len() > 0 {
+            return Err(self.errors)
         }
         Ok(())
     }
 
-    pub fn resolve_stmt(&mut self, stmt: &mut Stmt) -> Result {
+    fn resolve_inner(&mut self, stmts: &mut [Stmt]) {
+        for stmt in stmts {
+            self.resolve_stmt(stmt);
+        }
+    }
+
+    pub fn resolve_stmt(&mut self, stmt: &mut Stmt) {
         match *stmt {
             Stmt::Expr(ref mut expr) => {
-                self.resolve_expr(expr)?;
+                self.resolve_expr(expr);
             },
             Stmt::Print(ref mut expr) => {
-                self.resolve_expr(expr)?;
+                self.resolve_expr(expr);
             },
             Stmt::Var(ref mut var, ref mut expr) => {
-                self.scopes.declare(var.name())?;
-                self.resolve_expr(expr)?;
+                if let Err(e) = self.scopes.declare(var.name()) {
+                    self.errors.push(e);
+                };
+                self.resolve_expr(expr);
                 self.scopes.define(var.name());
                 self.scopes.resolve_local(var);
             },
             Stmt::Function(ref mut function) => {
                 // Define the function itself
-                self.scopes.init(function.var.name())?;
+                if let Err(e) = self.scopes.init(function.var.name()) {
+                    self.errors.push(e);
+                };
                 self.scopes.resolve_local(&mut function.var);
                 let mut declaration = function.declaration.borrow_mut();
-                self.resolve_function(&mut *declaration, FunctionType::Function)?;
+                self.resolve_function(&mut *declaration, FunctionType::Function);
             },
             Stmt::Block(ref mut stmts) => {
                 self.scopes.begin();
-                self.resolve(stmts)?;
+                self.resolve_inner(stmts);
                 self.scopes.end();
             },
             Stmt::If(ref mut cond, ref mut then_clause, ref mut else_clause) => {
-                self.resolve_expr(cond)?;
-                self.resolve_stmt(then_clause)?;
+                self.resolve_expr(cond);
+                self.resolve_stmt(then_clause);
                 if let Some(ref mut else_clause) = *else_clause {
-                    self.resolve_stmt(else_clause)?;
+                    self.resolve_stmt(else_clause);
                 }
             },
 			Stmt::While(ref mut cond, ref mut body) => {
-                self.resolve_expr(cond)?;
+                self.resolve_expr(cond);
                 self.loop_depth += 1;
-                self.resolve_stmt(body)?;
+                self.resolve_stmt(body);
                 self.loop_depth -= 1;
             },
             Stmt::Break => {
                 if self.loop_depth == 0 {
-                    return Err(ResolveError::BreakOutsideLoop);
+                    self.errors.push(ResolveError::BreakOutsideLoop);
                 }
             },
             Stmt::Return(ref mut expr) => {
                 match (self.scopes.function(), expr) {
                     (Some(FunctionType::Initializer), &mut Some(_)) =>
-                        return Err(ResolveError::ReturnFromInitializer),
-                    (Some(_), &mut Some(ref mut expr)) => self.resolve_expr(expr)?,
+                        self.errors.push(ResolveError::ReturnFromInitializer),
+                    (Some(_), &mut Some(ref mut expr)) => {
+                        self.resolve_expr(expr);
+                    },
                     (Some(_), _) => {},
-                    (None, _) => return Err(ResolveError::ReturnOutsideFunction),
+                    (None, _) => self.errors.push(ResolveError::ReturnOutsideFunction),
                 }
             },
-            Stmt::Class(ref mut class_decl) =>{
-                self.scopes.init(class_decl.var.name())?;
+            Stmt::Class(ref mut class_decl) => {
+                if let Err(e) = self.scopes.init(class_decl.var.name()) {
+                    self.errors.push(e);
+                };
                 self.scopes.resolve_local(&mut class_decl.var);
                 let enclosing_class = self.class.take();
                 if let Some(ref mut superclass) = class_decl.superclass {
                     self.class = Some(ClassType::Subclass);
                     self.scopes.resolve_local(superclass);
                     self.scopes.begin(); // begin 'super' scope
-                    self.scopes.init("super")?;
+                    if let Err(e) = self.scopes.init("super") {
+                        self.errors.push(e);
+                    };
                 } else {
                     self.class = Some(ClassType::Class);
                 }
                 self.scopes.begin(); // begin 'this' scope
-                self.scopes.init("this")?;
+                if let Err(e) = self.scopes.init("this") {
+                    self.errors.push(e);
+                };
                 for method in &class_decl.methods {
                     let name = method.var.name();
                     let mut declaration = method.declaration.borrow_mut();
-                    self.scopes.init(name)?;
+                    if let Err(e) = self.scopes.init(name) {
+                        self.errors.push(e);
+                    };
 
                     if name == "init" {
-                        self.resolve_function(&mut *declaration, FunctionType::Initializer)?;
+                        self.resolve_function(&mut *declaration, FunctionType::Initializer);
                     } else {
-                        self.resolve_function(&mut *declaration, FunctionType::Method)?;
+                        self.resolve_function(&mut *declaration, FunctionType::Method);
                     }
                 }
                 self.scopes.end(); // end 'this' scope
@@ -232,80 +256,79 @@ impl Resolver {
                 self.class = enclosing_class;
             },
         }
-        Ok(())
     }
 
-    pub fn resolve_expr(&mut self, expr: &mut Expr) -> Result {
+    pub fn resolve_expr(&mut self, expr: &mut Expr) {
         match expr.node {
             ExprKind::Grouping(ref mut inner) => {
-                self.resolve_expr(inner)?;
+                self.resolve_expr(inner);
             },
             ExprKind::Logical(ref mut inner) => {
-                self.resolve_expr(&mut inner.lhs)?;
-                self.resolve_expr(&mut inner.rhs)?;
+                self.resolve_expr(&mut inner.lhs);
+                self.resolve_expr(&mut inner.rhs);
             },
             ExprKind::Binary(ref mut inner) => {
-                self.resolve_expr(&mut inner.lhs)?;
-                self.resolve_expr(&mut inner.rhs)?;
+                self.resolve_expr(&mut inner.lhs);
+                self.resolve_expr(&mut inner.rhs);
             },
             ExprKind::Unary(ref mut inner) => {
-                self.resolve_expr(&mut inner.unary)?;
+                self.resolve_expr(&mut inner.unary);
             },
             ExprKind::Literal(_) => {},
             ExprKind::Var(ref mut var) => {
                 if let Some(false) = self.scopes.check_var(var.name()) {
-                    return Err(ResolveError::InitializerSelfReference);
+                    self.errors.push(ResolveError::InitializerSelfReference);
+                } else {
+                    self.scopes.resolve_local(var);
                 }
-                self.scopes.resolve_local(var);
             },
             ExprKind::Assign(ref mut var, ref mut value) => {
-                self.resolve_expr(value)?;
+                self.resolve_expr(value);
                 self.scopes.resolve_local(var);
             },
             ExprKind::Call(ref mut call) => {
-                self.resolve_expr(&mut call.callee)?;
+                self.resolve_expr(&mut call.callee);
                 for arg in &mut call.arguments {
-                    self.resolve_expr(arg)?;
+                    self.resolve_expr(arg);
                 }
             },
             ExprKind::Get(ref mut lhs, _) => {
-                self.resolve_expr(lhs)?;
+                self.resolve_expr(lhs);
             },
             ExprKind::Set(ref mut expr, _, ref mut value) => {
-                self.resolve_expr(expr)?;
-                self.resolve_expr(value)?;
+                self.resolve_expr(expr);
+                self.resolve_expr(value);
             },
             ExprKind::This(ref mut var, _) => {
                 if self.class.is_none() {
-                    return Err(ResolveError::ThisOutsideClass);
+                    self.errors.push(ResolveError::ThisOutsideClass);
                 }
                 self.scopes.resolve_local(var);
             },
             ExprKind::Super(ref mut var, _, _) => {
                 match self.class {
-                    None => Err(ResolveError::SuperOutsideClass),
-                    Some(ClassType::Class) => Err(ResolveError::SuperInBaseClass),
-                    _ => Ok(()),
-                }?;
+                    None => self.errors.push(ResolveError::SuperOutsideClass),
+                    Some(ClassType::Class) => self.errors.push(ResolveError::SuperInBaseClass),
+                    _ => (),
+                };
                 self.scopes.resolve_local(var);
             },
             ExprKind::Function(ref mut function) => {
                 let mut declaration = function.borrow_mut();
-                self.resolve_function(&mut *declaration, FunctionType::Function)?;
+                self.resolve_function(&mut *declaration, FunctionType::Function);
             },
         }
-        Ok(())
     }
 
-    fn resolve_function(&mut self, declaration: &mut FunctionDecl, function_type: FunctionType) -> Result {
+    fn resolve_function(&mut self, declaration: &mut FunctionDecl, function_type: FunctionType) {
         self.scopes.begin_function(function_type);
         for param in &declaration.parameters {
-            self.scopes.init(param.name())?;
+            if let Err(e) = self.scopes.init(param.name()) {
+                self.errors.push(e);
+            };
         }
-        self.resolve(&mut declaration.body)?;
+        self.resolve_inner(&mut declaration.body);
         self.scopes.end_function();
-
-        Ok(())
     }
 }
 
@@ -314,52 +337,60 @@ mod tests {
     use super::*;
     use ::parse;
 
+    macro_rules! assert_contains (
+        ($container:expr, $obj:expr) => {
+            let container = $container;
+            let obj = $obj;
+            assert!(container.contains(&obj), "Expected to contain {:?}, got {:?}", container, &obj);
+        }
+    );
+
     #[test]
     fn break_outside_loop() {
         let prog = "break;";
         let err  = parse_and_resolve(prog).unwrap_err();
-        assert_eq!(err, ResolveError::BreakOutsideLoop);
+        assert_contains!(err, ResolveError::BreakOutsideLoop);
     }
 
     #[test]
     fn this_outside_class() {
         let prog = "this;";
         let err  = parse_and_resolve(prog).unwrap_err();
-        assert_eq!(err, ResolveError::ThisOutsideClass);
+        assert_contains!(err, ResolveError::ThisOutsideClass);
 
         let prog = "fun foo() { this; }";
         let err  = parse_and_resolve(prog).unwrap_err();
-        assert_eq!(err, ResolveError::ThisOutsideClass);
+        assert_contains!(err, ResolveError::ThisOutsideClass);
     }
 
     #[test]
     fn return_from_init() {
         let prog = "class Foo { init() { return; } }";
-        parse_and_resolve(prog).unwrap();
+        parse_and_resolve(prog).expect("no error on empty return");
     }
 
     #[test]
     fn return_value_from_init() {
         let prog = "class Foo { init() { return 1; } }";
         let err  = parse_and_resolve(prog).unwrap_err();
-        assert_eq!(err, ResolveError::ReturnFromInitializer);
+        assert_contains!(err, ResolveError::ReturnFromInitializer);
     }
 
     #[test]
     fn super_outside_class() {
         let prog = "super.init();";
         let err  = parse_and_resolve(prog).unwrap_err();
-        assert_eq!(err, ResolveError::SuperOutsideClass);
+        assert_contains!(err, ResolveError::SuperOutsideClass);
     }
 
     #[test]
     fn super_from_base() {
         let prog = "class Foo { init() { super.init(); } }";
         let err  = parse_and_resolve(prog).unwrap_err();
-        assert_eq!(err, ResolveError::SuperInBaseClass);
+        assert_contains!(err, ResolveError::SuperInBaseClass);
     }
 
-    fn parse_and_resolve(prog: &str) -> Result {
+    fn parse_and_resolve(prog: &str) -> ::std::result::Result<(), Vec<ResolveError>> {
         let mut stmts = parse(prog).unwrap();
         Resolver::new().resolve(&mut stmts)
     }
