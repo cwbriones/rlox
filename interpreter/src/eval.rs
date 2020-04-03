@@ -33,9 +33,13 @@ pub enum RuntimeError {
     UndefinedProperty(String),
     #[fail(display = "Superclass must be a class.")]
     SuperNotAClass,
+    #[fail(display = "Stack overflow.")]
+    StackOverflow,
 }
 
 pub type Result<T> = ::std::result::Result<T, RuntimeError>;
+
+const MAX_STACK_SIZE: usize = 256;
 
 pub struct Interpreter {
     globals: Environment,
@@ -45,6 +49,7 @@ pub struct Interpreter {
     // Ideally we could add the value to the RuntimeError::Return variant but that would require
     // Value to be Sync, which is quite complicated due to closures.
     retvals: Vec<Value>,
+    stack_size: usize,
 }
 
 impl Interpreter {
@@ -55,6 +60,7 @@ impl Interpreter {
         Interpreter {
             globals,
             retvals: Vec::new(),
+            stack_size: 0,
         }
     }
 
@@ -64,7 +70,13 @@ impl Interpreter {
     }
 
     pub fn interpret_within<E: Eval>(&mut self, environment: &mut Environment, executable: E) -> Result<Value> {
-        executable.eval(self, environment)
+        if self.stack_size == MAX_STACK_SIZE {
+            return Err(RuntimeError::StackOverflow);
+        }
+        self.stack_size += 1;
+        let res = executable.eval(self, environment);
+        self.stack_size -= 1;
+        res
     }
 
     pub fn push_return(&mut self, value: Value) {
@@ -125,14 +137,14 @@ impl Eval for Stmt {
                     else_clause.eval(interpreter, env)?;
                 }
             },
-			Stmt::While(ref cond, ref body) => {
-				while cond.eval(interpreter, env)?.truthy() {
-					match body.eval(interpreter, env) {
+            Stmt::While(ref cond, ref body) => {
+                while cond.eval(interpreter, env)?.truthy() {
+                    match body.eval(interpreter, env) {
                         Err(RuntimeError::Break) => break,
                         val => val,
                     }?;
-				}
-			},
+                }
+            },
             Stmt::Break => return Err(RuntimeError::Break),
             Stmt::Return(ref expr) => {
                 let retval =
