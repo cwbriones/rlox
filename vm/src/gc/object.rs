@@ -4,16 +4,21 @@ use ::chunk::Chunk;
 
 use broom::prelude::Trace;
 use broom::prelude::Tracer;
+use broom::prelude::Heap;
+use broom::prelude::Handle;
 
 use std::fmt::{Debug, Display};
 use std::rc::Rc;
 use std::cell::RefCell;
+use std::collections::HashMap;
 
 #[derive(Clone)]
 pub enum Object {
     String(String),
     LoxFunction(LoxFunction),
+    LoxClass(LoxClass),
     LoxClosure(LoxClosure),
+    LoxInstance(LoxInstance),
     NativeFunction(NativeFunction),
 }
 
@@ -23,7 +28,67 @@ impl Trace<Self> for Object {
             Object::String(_) => {},
             Object::LoxFunction(f) => f.trace(tracer),
             Object::NativeFunction(_) => {},
+            Object::LoxClass(_) => {},
             Object::LoxClosure(c) => c.trace(tracer),
+            Object::LoxInstance(c) => c.trace(tracer),
+        }
+    }
+}
+
+/// Quickly implement a method that collapses the enum into an Option for
+/// matching a single variant.
+macro_rules! impl_as (
+    ($name:ident, $typ:ident) => {
+        pub fn $name(&self) -> Option<&$typ> {
+            if let Object::$typ(ref o) = *self {
+                Some(o)
+            } else {
+                None
+            }
+        }
+    }
+);
+
+impl Object {
+    pub fn native_fn(name: &str, arity: u8, function: fn(&Heap<Object>, &[Value]) -> Value) -> Self {
+        Object::NativeFunction(
+            NativeFunction {
+                name: name.into(),
+                arity,
+                function,
+            },
+        )
+    }
+
+    impl_as!(as_string, String);
+    impl_as!(as_function, LoxFunction);
+    impl_as!(as_closure, LoxClosure);
+    impl_as!(as_class, LoxClass);
+    impl_as!(as_instance, LoxInstance);
+}
+
+impl Debug for Object {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        match *self {
+            Object::String(ref s) => write!(f, "{:?}", s),
+            Object::LoxFunction(ref fun) => write!(f, "<function: {:?}>", fun.name),
+            Object::LoxClass(ref class) => write!(f, "<class {:?}>", class.name),
+            Object::LoxClosure(ref cl) => write!(f, "<closure {:?}>", cl.function),
+            Object::LoxInstance(ref inst) => write!(f, "<instance {}>", inst.classname()),
+            Object::NativeFunction(ref na) => write!(f, "<native fn {:?}>", na.name),
+        }
+    }
+}
+
+impl Display for Object {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        match *self {
+            Object::String(ref s) => write!(f, "{}", s),
+            Object::LoxFunction(ref fun) => write!(f, "<fn {}>", fun.name),
+            Object::LoxClass(ref class) => write!(f, "{}", class.name),
+            Object::LoxClosure(ref cl) => write!(f, "<fn {}>", cl.function.name),
+            Object::LoxInstance(ref inst) => write!(f, "instance {}", inst.classname()),
+            Object::NativeFunction(ref na) => write!(f, "<native fn {}>", na.name),
         }
     }
 }
@@ -97,7 +162,7 @@ impl Trace<Object> for LoxFunction {
 pub struct NativeFunction {
     pub name: String,
     pub arity: u8,
-    pub function: fn(&[Value]) -> Value,
+    pub function: fn(&Heap<Object>, &[Value]) -> Value,
 }
 
 #[derive(Clone)]
@@ -175,52 +240,53 @@ impl LoxUpValue {
     }
 }
 
-impl Object {
-    pub fn native_fn(name: &str, arity: u8, function: fn(&[Value]) -> Value) -> Self {
-        Object::NativeFunction(
-            NativeFunction {
-                name: name.into(),
-                arity,
-                function,
-            },
-        )
-    }
+#[derive(Debug, Clone)]
+pub struct LoxClass {
+    name: String,
+}
 
-    pub fn as_function(&self) -> Option<&LoxFunction> {
-        if let Object::LoxFunction(ref f) = *self {
-            Some(f)
-        } else {
-            None
+impl LoxClass {
+    pub fn new(name: String) -> Self {
+        LoxClass { name }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct LoxInstance {
+    class: Handle<Object>,
+    fields: HashMap<String, Value>,
+}
+
+impl LoxInstance {
+    pub fn new(class: Handle<Object>) -> Self {
+        LoxInstance {
+            class,
+            fields: HashMap::new(),
         }
     }
 
-    pub fn is_closure(&self) -> bool {
-        if let Object::LoxClosure(_) = *self {
-            true
-        } else {
-            false
+    pub fn get_property(&self, name: &str) -> Option<Value> {
+        self.fields.get(name).cloned()
+    }
+
+    pub fn set_property(&mut self, name: &str, value: Value) {
+        self.fields.insert(name.into(), value);
+    }
+
+    pub fn classname(&self) -> &str {
+        unsafe {
+            let class = self.class
+                .get_unchecked()
+                .as_class()
+                .expect("should be a class");
+            &class.name
         }
     }
 }
 
-impl Debug for Object {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-        match *self {
-            Object::String(ref s) => write!(f, "{:?}", s),
-            Object::LoxFunction(ref fun) => write!(f, "<function: {:?}>", fun.name),
-            Object::LoxClosure(ref cl) => write!(f, "<closure {:?}>", cl.function),
-            Object::NativeFunction(ref na) => write!(f, "<native fn {:?}>", na.name),
-        }
-    }
-}
-
-impl Display for Object {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-        match *self {
-            Object::String(ref s) => write!(f, "{}", s),
-            Object::LoxFunction(ref fun) => write!(f, "<fn {}>", fun.name),
-            Object::LoxClosure(ref cl) => write!(f, "<fn {}>", cl.function.name),
-            Object::NativeFunction(ref na) => write!(f, "<native fn {}>", na.name),
-        }
+impl Trace<Object> for LoxInstance {
+    fn trace(&self, tracer: &mut Tracer<Object>) {
+        self.class.trace(tracer);
+        self.fields.values().for_each(|v| v.trace(tracer));
     }
 }

@@ -7,8 +7,10 @@ use chunk::Chunk;
 use compile::Compiler;
 
 use gc::object::Object;
+use gc::object::LoxClass;
 use gc::object::LoxClosure;
 use gc::object::LoxUpValue;
+use gc::object::LoxInstance;
 use gc::value::Value;
 use gc::value::Variant;
 use parser::ast::Stmt;
@@ -61,12 +63,12 @@ impl CallFrame {
     }
 
     pub fn read_constant_at(&mut self, idx: u8) -> Value {
-        self.with_chunk(|c| *c.get_constant(idx).unwrap())
+        self.with_chunk(|c| *c.get_constant(idx).expect("invalid constant index"))
     }
 
     pub fn read_constant(&mut self) -> Value {
         let idx = self.read_byte();
-        self.with_chunk(|c| *c.get_constant(idx).unwrap())
+        self.read_constant_at(idx)
     }
 
     pub fn with_chunk<F, T>(&self, fun: F) -> T
@@ -97,6 +99,7 @@ pub enum RuntimeError {
     BadCall,
     ArityMismatch(u8, u8),
     UndefinedVariable(String),
+    UndefinedProperty(String),
 }
 
 impl ::std::fmt::Display for RuntimeError {
@@ -107,6 +110,7 @@ impl ::std::fmt::Display for RuntimeError {
             RuntimeError::BadCall => write!(f, "Can only call functions and classes"),
             RuntimeError::ArityMismatch(expected, got) => write!(f, "Expected {} arguments but got {}", expected, got),
             RuntimeError::UndefinedVariable(ref var) => write!(f, "Undefined variable '{}'", var),
+            RuntimeError::UndefinedProperty(ref prop) => write!(f, "Undefined property '{}'", prop),
         }
     }
 }
@@ -157,7 +161,7 @@ impl VM {
 
     fn print(&mut self) {
         let val = self.pop();
-        println!("{}", val);
+        println!("{}", val.decode().deref(&self.heap));
     }
 
     fn add(&mut self) {
@@ -263,10 +267,10 @@ impl VM {
 
     fn define_global(&mut self) {
         let val = self.frame_mut().read_constant();
-        let obj = val.deref(&self.heap).cloned();
-        if let Some(Object::String(s)) = obj {
-            let lhs = self.pop();
-            self.globals.insert(s, lhs);
+        let obj = val.decode().deref(&self.heap);
+        if let Variant::Obj(Object::String(s)) = obj {
+            let lhs = self.stack.pop().unwrap();
+            self.globals.insert(s.clone(), lhs);
             return;
         }
         panic!("DEFINE_GLOBAL constant was not a string");
@@ -274,10 +278,10 @@ impl VM {
 
     fn set_global(&mut self) {
         let val = self.frame_mut().read_constant();
-        let obj = val.deref(&self.heap).cloned();
-        if let Some(Object::String(s)) = obj {
-            let lhs = self.peek();
-            self.globals.insert(s, lhs);
+        let obj = val.decode().deref(&self.heap);
+        if let Variant::Obj(Object::String(s)) = obj {
+            let lhs = self.stack.last().cloned().unwrap();
+            self.globals.insert(s.clone(), lhs);
             return;
         }
         panic!("SET_GLOBAL constant was not a string");
@@ -328,12 +332,12 @@ impl VM {
     fn call(&mut self, arity: u8) {
         let last = self.stack.len();
         let frame_start = last - (arity + 1) as usize;
-        let callee = &self.stack[frame_start];
+        let callee = self.stack[frame_start].decode();
 
         // ensure callee is a closure
-        if let Some(o) = callee.deref(&self.heap) {
-            match o {
-                Object::LoxClosure(ref closure) => {
+        if let Variant::Obj(handle) = callee {
+            match self.heap.get(handle) {
+                Some(Object::LoxClosure(ref closure)) => {
                     if closure.arity() != arity {
                         self.runtime_error(RuntimeError::ArityMismatch(closure.arity(), arity));
                     }
@@ -341,14 +345,19 @@ impl VM {
                     self.frames.push(frame);
                     return;
                 },
-                &Object::NativeFunction(ref native) => {
+                Some(Object::NativeFunction(ref native)) => {
                     if native.arity != arity {
                         self.runtime_error(RuntimeError::ArityMismatch(native.arity, arity));
                     }
                     let val = {
-                        (native.function)(&self.stack[frame_start..])
+                        (native.function)(&self.heap, &self.stack[frame_start..])
                     };
                     self.stack.pop(); // function
+                    self.stack.push(val);
+                    return;
+                },
+                Some(Object::LoxClass(_)) => {
+                    let val = self.allocate(Object::LoxInstance(LoxInstance::new(handle))).into();
                     self.stack.push(val);
                     return;
                 },
@@ -399,28 +408,86 @@ impl VM {
 
     fn closure(&mut self) {
         let value = self.frame_mut().read_constant();
-        if let Some(Object::LoxFunction(f)) = value.deref(&self.heap).cloned() {
-            let count = f.upvalue_count();
-            let mut upvalues = Vec::new();
-            for _ in 0..count {
-                let is_local = self.read_byte() > 0;
-                let idx = self.read_byte() as usize;
-                let upvalue = if is_local {
-                    // This upvalue is local and so this closure may need to capture it
-                    // to ensure that the reference will continue to be valid.
-                    self.capture_upvalue(idx)
-                } else {
-                    // This value has been previously captured across some enclosing scope.
-                    self.current_closure().get(idx)
-                };
-                upvalues.push(upvalue);
-            }
-            let closure = LoxClosure::new(f.clone(), upvalues);
-            let val = self.allocate(Object::LoxClosure(closure)).into();
-            self.push(val);
-            return;
+        let obj = value.decode().deref(&self.heap);
+        let function = if let Variant::Obj(Object::LoxFunction(f)) = obj {
+            f.clone()
+        } else {
+            panic!("closure argument should be a function");
+        };
+        let mut upvalues = Vec::new();
+        for _ in 0..function.upvalue_count() {
+            let is_local = self.read_byte() > 0;
+            let idx = self.read_byte() as usize;
+            let upvalue = if is_local {
+                // This upvalue is local and so this closure may need to capture it
+                // to ensure that the reference will continue to be valid.
+                self.capture_upvalue(idx)
+            } else {
+                // This value has been previously captured across some enclosing scope.
+                self.current_closure().get(idx)
+            };
+            upvalues.push(upvalue);
         }
-        panic!("closure argument should be a function");
+        let closure = LoxClosure::new(function, upvalues);
+        let val = self.allocate(Object::LoxClosure(closure)).into();
+        self.push(val);
+    }
+
+    fn class(&mut self, idx: u8) {
+        let obj = self.frame_mut().read_constant_at(idx);
+        let name = if let Variant::Obj(Object::String(name)) = obj.decode().deref(&self.heap) {
+            name.clone()
+        } else {
+            panic!("class constant was not a string");
+        };
+        let val = self.allocate(Object::LoxClass(LoxClass::new(name))).into();
+        self.push(val);
+    }
+
+    fn get_property(&mut self) {
+        let idx = self.read_byte();
+        let name_val = self.frame_mut().read_constant_at(idx);
+        let instance_val = self.pop();
+
+        let name = name_val.decode().deref(&self.heap);
+        let instance = instance_val.decode().deref(&self.heap);
+
+        if let Variant::Obj(Object::String(name)) = name {
+            if let Variant::Obj(Object::LoxInstance(inst)) = instance {
+                if let Some(prop) = inst.get_property(&name) {
+                    self.push(prop);
+                } else {
+                    self.runtime_error(RuntimeError::UndefinedProperty(name.clone()));
+                }
+                return
+            }
+            panic!("expression was not an instance")
+        }
+        panic!("property name was not a string")
+    }
+
+    fn set_property(&mut self) {
+        let idx = self.read_byte();
+        let name_val = self.frame_mut().read_constant_at(idx);
+
+        // Current stack looks like:
+        //
+        // [ ... / ... / <instance> / <value> ]
+        let val = self.pop();
+        let instance_val = self.pop();
+
+        let name = name_val.decode().cloned(&self.heap);
+        let instance = instance_val.decode().deref_mut(&mut self.heap);
+
+        if let Variant::Obj(Object::String(name)) = name {
+            if let Variant::Obj(Object::LoxInstance(inst)) = instance {
+                inst.set_property(&name, val);
+                self.push(val);
+                return
+            }
+            panic!("expression was not an instance")
+        }
+        panic!("property name was not a string")
     }
 
     fn current_closure(&mut self) -> &mut LoxClosure {

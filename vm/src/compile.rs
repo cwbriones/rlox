@@ -220,17 +220,20 @@ impl<'g> Compiler<'g> {
                 }
                 self.emit(Op::Return);
             }
-            // Stmt::Class(_) => {
-            // },
+            Stmt::Class(ref class) => {
+                let idx = self.string_constant(class.var.name());
+                self.emit(Op::Class(idx));
+                self.var_define(&class.var, Some(idx));
+            },
             Stmt::Break => {
                 let jmp = self.emit_jmp();
                 self.state_mut().add_break(jmp);
             }
             Stmt::Var(ref var, ref init) => {
                 self.compile_expr(init);
-                self.var_define(var);
+                self.var_define(var, None);
             }
-            ref s => unimplemented!("{:?}", s),
+            // ref s => unimplemented!("{:?}", s),
         }
     }
 
@@ -304,6 +307,19 @@ impl<'g> Compiler<'g> {
                 let op = Op::Call(arity as u8);
                 self.emit(op);
             },
+            ExprKind::Get(ref lhs, ref prop) => {
+                self.compile_expr(lhs);
+                self.emit(Op::GetProperty);
+                let idx = self.string_constant(prop);
+                self.emit_byte(idx);
+            },
+            ExprKind::Set(ref lhs, ref prop, ref rhs) => {
+                self.compile_expr(lhs);
+                self.compile_expr(rhs);
+                self.emit(Op::SetProperty);
+                let idx = self.string_constant(prop);
+                self.emit_byte(idx);
+            },
             ref e => unimplemented!("{:?}", e),
         }
     }
@@ -319,13 +335,7 @@ impl<'g> Compiler<'g> {
         match var.scope() {
             Scope::Global => {
                 self.emit(Op::GetGlobal);
-                let idx = {
-                    let chunk = self.states.last_mut()
-                        .unwrap()
-                        .function
-                        .chunk_mut();
-                    chunk.string_constant(self.heap, var.name())
-                };
+                let idx = self.string_constant(var.name());
                 self.emit_byte(idx);
             },
             Scope::Local(_) => {
@@ -336,18 +346,14 @@ impl<'g> Compiler<'g> {
         }
     }
 
-    fn var_define(&mut self, var: &Variable) {
+    fn var_define(&mut self, var: &Variable, constant: Option<u8>) {
         debug!("var_define {:?}", var);
         match var.scope() {
             Scope::Global => {
                 self.emit(Op::DefineGlobal);
-                let idx = {
-                    let chunk = self.states.last_mut()
-                        .unwrap()
-                        .function
-                        .chunk_mut();
-                    chunk.string_constant(self.heap, var.name())
-                };
+                let idx = constant.unwrap_or_else(|| {
+                    self.string_constant(var.name())
+                });
                 self.emit_byte(idx);
             },
             Scope::Local(d) => {
@@ -427,7 +433,7 @@ impl<'g> Compiler<'g> {
             });
             self.emit_byte(upvalue.index);
         }
-        self.var_define(&f.var);
+        self.var_define(&f.var, None);
     }
 
     fn resolve_upvalue(&mut self, name: &str) -> u8 {
@@ -483,7 +489,7 @@ impl<'g> Compiler<'g> {
     fn dissassemble(&self, chunk: &Chunk) {
         use debug::Disassembler;
 
-        let dis = Disassembler::new(chunk);
+        let dis = Disassembler::new(chunk, &self.heap);
         dis.disassemble();
     }
 
@@ -518,6 +524,11 @@ impl<'g> Compiler<'g> {
                 self.emit(Op::Constant(idx));
             }
         }
+    }
+
+    fn string_constant(&mut self, s: &str) -> u8 {
+        let chunk = self.states.last_mut().unwrap().function.chunk_mut();
+        chunk.string_constant(self.heap, s)
     }
 
     #[cfg(feature = "op-immediate")]

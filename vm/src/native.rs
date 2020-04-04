@@ -1,6 +1,8 @@
 use gc::value::Value;
+use gc::object::Object;
+use broom::Heap;
 
-pub fn clock(_args: &[Value]) -> Value {
+pub fn clock(_heap: &Heap<Object>, _args: &[Value]) -> Value {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     let epoch_time =
@@ -13,7 +15,7 @@ pub fn clock(_args: &[Value]) -> Value {
     Value::float(time_ms as f64)
 }
 
-pub fn native_print(args: &[Value]) -> Value {
-    print!("{}", args[1]);
+pub fn native_print(heap: &Heap<Object>, args: &[Value]) -> Value {
+    println!("{}", args[1].decode().deref(heap));
     Value::nil()
 }

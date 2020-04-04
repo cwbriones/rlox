@@ -3,6 +3,7 @@ use broom::prelude::Trace;
 use broom::prelude::Tracer;
 
 use gc::value::Value;
+use gc::value::Variant;
 use gc::object::Object;
 
 #[derive(Debug, Clone)]
@@ -115,7 +116,7 @@ impl Chunk {
     pub fn string_constant(&mut self, heap: &mut Heap<Object>, string: &str) -> u8 {
         // Scan constants for one that already exists
         for (i, c) in self.constants().enumerate() {
-            if let Some(&Object::String(ref s)) = c.deref(heap) {
+            if let Variant::Obj(&Object::String(ref s)) = c.decode().deref(heap) {
                 if s == string {
                     return i as u8
                 }
@@ -203,8 +204,8 @@ pub enum Op {
     SetGlobal,
     GetUpValue,
     SetUpValue,
-    // GetProperty,
-    // SetProperty,
+    GetProperty,
+    SetProperty,
     // GetSuper,
     Equal,
     GreaterThan,
@@ -220,7 +221,6 @@ pub enum Op {
     JumpIfFalse,
     Loop,
     Immediate,
-    // Loop,
     Call(u8),
     // Invoke_0,
     // Invoke_1,
@@ -243,7 +243,7 @@ pub enum Op {
     Closure,
     CloseUpValue,
     // Return,
-    // Class,
+    Class(u8),
     // SubClass,
     // Method,
 }
@@ -282,6 +282,9 @@ impl Op {
             Op::SetUpValue => buf.push(0x22),
             Op::Closure => buf.push(0x23),
             Op::DefineGlobal => buf.push(0x24),
+            Op::Class(idx) => { buf.push(0x25); buf.push(idx); },
+            Op::GetProperty => buf.push(0x26),
+            Op::SetProperty => buf.push(0x27),
         }
     }
 }
@@ -321,6 +324,9 @@ macro_rules! decode_op {
             0x22 => $this.set_upvalue(),
             0x23 => $this.closure(),
             0x24 => $this.define_global(),
+            0x25 => { let idx = $this.read_byte(); $this.class(idx); }
+            0x26 => $this.get_property(),
+            0x27 => $this.set_property(),
             _ => {
                 panic!("Unknown op {}", $op);
             }

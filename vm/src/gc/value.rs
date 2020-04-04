@@ -14,13 +14,46 @@ pub struct Value {
     handle: TaggedHandle<Object>,
 }
 
-#[derive(Debug)]
-pub enum Variant {
+#[derive(Debug, Clone)]
+pub enum Variant<Obj> {
     Float(f64),
     True,
     False,
     Nil,
-    Obj(Handle<Object>)
+    Obj(Obj)
+}
+
+impl Variant<Handle<Object>> {
+    pub fn cloned<'a>(&self, heap: &'a Heap<Object>) -> Variant<Object> {
+        match self {
+            Variant::Obj(o) => Variant::Obj(heap.get(o).expect("runtime reference to be valid").clone()),
+            Variant::Float(f) => Variant::Float(*f),
+            Variant::True => Variant::True,
+            Variant::False => Variant::False,
+            Variant::Nil => Variant::Nil,
+        }
+    }
+
+    pub fn deref<'a>(&self, heap: &'a Heap<Object>) -> Variant<&'a Object> {
+        match self {
+            Variant::Obj(o) => Variant::Obj(heap.get(o).expect("runtime reference to be valid")),
+            Variant::Float(f) => Variant::Float(*f),
+            Variant::True => Variant::True,
+            Variant::False => Variant::False,
+            Variant::Nil => Variant::Nil,
+        }
+    }
+
+    pub fn deref_mut<'a>(&self, heap: &'a mut Heap<Object>) -> Variant<&'a mut Object> {
+        match self {
+            Variant::Obj(o) => Variant::Obj(heap.get_mut(o).expect("runtime reference to be valid")),
+            Variant::Float(f) => Variant::Float(*f),
+            Variant::True => Variant::True,
+            Variant::False => Variant::False,
+            Variant::Nil => Variant::Nil,
+        }
+    }
+
 }
 
 const TAG_TRUE: u8 = 0x01;
@@ -86,7 +119,7 @@ impl Value {
         !self.truthy()
     }
 
-    pub fn decode(&self) -> Variant {
+    pub fn decode(&self) -> Variant<Handle<Object>> {
         match self.handle.clone().decode() {
             Tag::Float(float) => {
                 Variant::Float(float)
@@ -98,22 +131,6 @@ impl Value {
             Tag::Tag(t) if t == TAG_FALSE => Variant::False,
             Tag::Tag(t) if t == TAG_NIL => Variant::Nil,
             Tag::Tag(t) => panic!("Unknown tag {}", t)
-        }
-    }
-
-    pub fn deref<'a>(&self, heap: &'a Heap<Object>) -> Option<&'a Object> {
-        self.as_object().and_then(|h| heap.get(h))
-    }
-
-    pub fn deref_mut<'a>(&self, heap: &'a mut Heap<Object>) -> Option<&'a mut Object> {
-        self.as_object().and_then(move |h| heap.get_mut(h))
-    }
-
-    pub fn as_object(&self) -> Option<Handle<Object>> {
-        if let Tag::Handle(h) = self.handle.clone().decode() {
-            Some(h)
-        } else {
-            None
         }
     }
 }
@@ -139,27 +156,19 @@ impl Debug for Value {
             Variant::False => write!(f, "false"),
             Variant::True => write!(f, "true"),
             Variant::Float(n) => write!(f, "{:?}", n),
-            // FIXME: Debug shouldn't be unsafe but there's no way to check the
-            // pointer without dereferencing.
-            Variant::Obj(o) => unsafe {
-                write!(f, "{}", o.get_unchecked())
-            }
+            Variant::Obj(o) => write!(f, "{:?}", o),
         }
     }
 }
 
-impl Display for Value {
+impl Display for Variant<&Object> {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-        match self.decode() {
+        match self {
             Variant::Nil => write!(f, "nil"),
             Variant::False => write!(f, "false"),
             Variant::True => write!(f, "true"),
             Variant::Float(n) => write!(f, "{}", n),
-            // FIXME: Display shouldn't be unsafe but there's no way to check the
-            // pointer without dereferencing.
-            Variant::Obj(o) => unsafe {
-                write!(f, "{}", o.get_unchecked())
-            }
+            Variant::Obj(o) => write!(f, "{}", o),
         }
     }
 }

@@ -2,18 +2,22 @@ use chunk::Chunk;
 use gc::object::Object;
 use gc::value::Value;
 
+use broom::Heap;
+
 pub struct Disassembler<'c> {
     offset: usize,
     line: usize,
     chunk: &'c Chunk,
+    heap: &'c Heap<Object>,
 }
 
 impl<'c> Disassembler<'c> {
-    pub fn new(chunk: &'c Chunk) -> Self {
+    pub fn new(chunk: &'c Chunk, heap: &'c Heap<Object>) -> Self {
         Disassembler {
             offset: 0,
             line: 0,
             chunk,
+            heap,
         }
     }
 
@@ -75,17 +79,17 @@ impl<'c> Disassembler<'c> {
 
     fn get_global(&mut self) {
         let val = self.read_constant();
-        println!("OP_GET_GLOBAL\t{:?}", val);
+        println!("OP_GET_GLOBAL\t{}", val.decode().deref(self.heap));
     }
 
     fn set_global(&mut self) {
         let val = self.read_constant();
-        println!("OP_SET_GLOBAL\t{:?}", val);
+        println!("OP_SET_GLOBAL\t{}", val.decode().deref(self.heap));
     }
 
     fn define_global(&mut self) {
         let val = self.read_constant();
-        println!("OP_DEFINE_GLOBAL\t{:?}", val);
+        println!("OP_DEFINE_GLOBAL\t{}", val.decode().deref(self.heap));
     }
 
     fn get_local(&mut self) {
@@ -117,7 +121,7 @@ impl<'c> Disassembler<'c> {
             (b7 << 48) +
             (b8 << 56);
         let val = unsafe { Value::from_raw(raw) };
-        println!("OP_FLOAT\t{}", val);
+        println!("OP_FLOAT\t{}", val.decode().deref(self.heap));
     }
 
     fn imm_nil(&self) {
@@ -152,15 +156,12 @@ impl<'c> Disassembler<'c> {
 
     fn closure(&mut self) {
         let value = self.read_constant();
-        // FIXME: unsafe
-        let count = value.as_object().and_then(|o| unsafe {
-            if let Object::LoxFunction(f) = o.get_unchecked() {
-                return Some(f.upvalue_count())
-            }
-            None
-        })
-        .expect("closure argument to be function");
-        print!("OP_CLOSURE\t{} ", value);
+        let count = if let Some(Object::LoxFunction(f)) = value.decode().as_object(self.heap) {
+            f.upvalue_count()
+        } else {
+            panic!("expect closure argument to be function");
+        };
+        print!("OP_CLOSURE\t{} ", value.decode().deref(self.heap));
         for _ in 0..count {
             let is_local = self.read_byte() > 0;
             let index = self.read_byte();
@@ -173,11 +174,27 @@ impl<'c> Disassembler<'c> {
         println!();
     }
 
+    fn class(&mut self, idx: u8) {
+        let val = self.chunk.get_constant(idx).expect("invalid constant segment index");
+        println!("OP_CLASS\t{}\t{}", idx, val.decode().deref(&self.heap));
+    }
+
+    fn get_property(&mut self) {
+        let idx = self.read_byte();
+        let val = self.chunk.get_constant(idx).expect("invalid constant segment index");
+        println!("GET_PROPERTY\t{}\t{}", idx, val.decode().deref(&self.heap));
+    }
+
+    fn set_property(&mut self) {
+        let idx = self.read_byte();
+        let val = self.chunk.get_constant(idx).expect("invalid constant segment index");
+        println!("SET_PROPERTY\t{}\t{}", idx, val.decode().deref(&self.heap));
+    }
+
     fn read_byte(&mut self) -> u8 {
         self.offset += 1;
         self.chunk.as_ref()[self.offset - 1]
     }
-
 
     fn read_u16(&mut self) -> u16 {
         self.offset += 2;

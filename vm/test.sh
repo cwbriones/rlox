@@ -4,7 +4,6 @@
 # implemented in the VM.
 
 cargo test --\
-    --skip constructor\
     --skip field\
     --skip inheritance\
     --skip limit\
