@@ -218,9 +218,9 @@ impl Display for Object {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
         match *self {
             Object::String(ref s) => write!(f, "{}", s),
-            Object::LoxFunction(ref fun) => write!(f, "<fn '{}'>", fun.name),
-            Object::LoxClosure(ref cl) => write!(f, "<closure '{:?}'>", cl.function),
-            Object::NativeFunction(ref na) => write!(f, "<native fn '{}'>", na.name),
+            Object::LoxFunction(ref fun) => write!(f, "<fn {}>", fun.name),
+            Object::LoxClosure(ref cl) => write!(f, "<fn {}>", cl.function.name),
+            Object::NativeFunction(ref na) => write!(f, "<native fn {}>", na.name),
         }
     }
 }

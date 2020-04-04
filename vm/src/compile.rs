@@ -38,7 +38,7 @@ struct CompileState {
 impl CompileState {
     fn new(function: LoxFunctionBuilder, scope_depth: usize) -> Self {
         // Reserve the first local
-        let locals = vec![Local { name: "".into(), depth: 0, captured: false}];
+        let locals = vec![Local { name: "RESERVED LOCAL".into(), depth: 1, captured: false}];
         let upvalues = Vec::new();
         CompileState {
             line: 1,
@@ -153,7 +153,7 @@ impl<'g> Compiler<'g> {
     }
 
     pub fn compile(mut self, stmts: &[Stmt]) -> LoxFunction {
-        self.start_function("<script>", 0, 0);
+        self.start_function("<top>", 0, 0);
         for stmt in stmts {
             self.compile_stmt(stmt);
         }
@@ -237,17 +237,8 @@ impl<'g> Compiler<'g> {
     fn compile_expr(&mut self, expr: &Expr) {
         match expr.node {
             ExprKind::Binary(ref binary) => {
-                match binary.operator {
-                    BinaryOperator::GreaterThanEq | BinaryOperator::LessThanEq => {
-                        // Swap to logically equivalent arguments
-                        self.compile_expr(&*binary.rhs);
-                        self.compile_expr(&*binary.lhs);
-                    }
-                    _ => {
-                        self.compile_expr(&*binary.lhs);
-                        self.compile_expr(&*binary.rhs);
-                    }
-                }
+                self.compile_expr(&*binary.lhs);
+                self.compile_expr(&*binary.rhs);
 
                 match binary.operator {
                     BinaryOperator::Plus => self.emit(Op::Add),
@@ -257,8 +248,14 @@ impl<'g> Compiler<'g> {
                     BinaryOperator::Equal => self.emit(Op::Equal),
                     BinaryOperator::GreaterThan => self.emit(Op::GreaterThan),
                     BinaryOperator::LessThan => self.emit(Op::LessThan),
-                    BinaryOperator::GreaterThanEq => self.emit(Op::LessThan),
-                    BinaryOperator::LessThanEq => self.emit(Op::GreaterThan),
+                    BinaryOperator::GreaterThanEq => {
+                        self.emit(Op::LessThan);
+                        self.emit(Op::Not);
+                    },
+                    BinaryOperator::LessThanEq => {
+                        self.emit(Op::GreaterThan);
+                        self.emit(Op::Not);
+                    },
                     BinaryOperator::BangEq => {
                         self.emit(Op::Equal);
                         self.emit(Op::Not);

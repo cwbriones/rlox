@@ -219,7 +219,6 @@ impl<'t> Parser<'t> {
     }
 
     fn function_declaration(&mut self) -> Result<FunctionDecl> {
-        // FIXME: These errors are weird.
         self.expect(TokenType::LeftParen).after("function name")?;
         let mut parameters = Vec::new();
         match self.peek_type()? {
@@ -372,7 +371,20 @@ impl<'t> Parser<'t> {
 
         let mut body = self.statement()?;
 
-        // Desugar into while loop
+        // Desugar into while loop.
+        //
+        // for (<initializer>; <condition>; <increment>) <body>
+        //
+        // becomes
+        //
+        // {
+        //     <initializer>
+        //     while <condition> {
+        //         <body>
+        //         <increment>
+        //     }
+        // }
+        //
         body = match increment {
             Some(increment) => {
                 Stmt::Block(vec![body, Stmt::Expr(increment)])
@@ -630,7 +642,6 @@ impl<'t> Parser<'t> {
     }
 
     fn advance(&mut self) -> Result<Token<'t>> {
-        // FIXME: Don't unwrap
         self.scanner.next().unwrap_or_else(|| Err(SyntaxError::UnexpectedEOF))
     }
 

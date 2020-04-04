@@ -139,7 +139,11 @@ impl Debug for Value {
             Variant::False => write!(f, "false"),
             Variant::True => write!(f, "true"),
             Variant::Float(n) => write!(f, "{:?}", n),
-            Variant::Obj(o) => write!(f, "{:?}", o),
+            // FIXME: Debug shouldn't be unsafe but there's no way to check the
+            // pointer without dereferencing.
+            Variant::Obj(o) => unsafe {
+                write!(f, "{}", o.get_unchecked())
+            }
         }
     }
 }

@@ -20,10 +20,6 @@ impl<'c> Disassembler<'c> {
     pub fn disassemble(mut self) {
         let bytes = self.chunk.as_ref();
         println!("== {} ==", self.chunk.name());
-        for (i, c) in self.chunk.constants().enumerate() {
-            println!("{:3} {}", i, c);
-        }
-        println!("=========");
         while self.offset < bytes.len() {
             self.disassemble_instruction();
         }
@@ -53,8 +49,8 @@ impl<'c> Disassembler<'c> {
     fn sub(&self) { println!("OP_SUB"); }
     fn mul(&self) { println!("OP_MUL"); }
     fn div(&self) { println!("OP_DIV"); }
-    fn neg(&self) { println!("OP_DIV"); }
-    fn not(&self) { println!("OP_DIV"); }
+    fn neg(&self) { println!("OP_NEG"); }
+    fn not(&self) { println!("OP_NOT"); }
     fn eq(&self) { println!("OP_EQ"); }
     fn gt(&self) { println!("OP_GT"); }
     fn lt(&self) { println!("OP_LT"); }
@@ -63,13 +59,13 @@ impl<'c> Disassembler<'c> {
     fn jmp(&mut self) {
         let offset = self.offset - 1;
         let ip = self.read_u16();
-        println!("OP_JMP\t{} -> {}", offset, ip);
+        println!("OP_JUMP\t{} -> {}", offset, ip);
     }
 
     fn jze(&mut self) {
         let offset = self.offset - 1;
         let ip = self.read_u16();
-        println!("OP_JZE\t{} -> {}", offset, ip);
+        println!("OP_JUMP_IF_FALSE\t{} -> {}", offset, ip);
     }
 
     fn op_loop(&mut self) {

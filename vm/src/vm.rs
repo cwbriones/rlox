@@ -86,17 +86,16 @@ macro_rules! binary_op {
             $self.push(c.into());
             return;
         }
-        $self.runtime_error(RuntimeError::ArgumentNotANumber);
+        $self.runtime_error(RuntimeError::BadArgument("Operands must be numbers"));
     }
 }
 
 #[derive(Debug, Clone)]
 pub enum RuntimeError {
     DivideByZero,
-    ArgumentNotANumber,
-    ArgumentNotAString,
+    BadArgument(&'static str),
     BadCall,
-    BadArgs(u8, u8),
+    ArityMismatch(u8, u8),
     UndefinedVariable(String),
 }
 
@@ -104,10 +103,9 @@ impl ::std::fmt::Display for RuntimeError {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
         match *self {
             RuntimeError::DivideByZero => write!(f, "divide by zero"),
-            RuntimeError::ArgumentNotANumber => write!(f, "Operands must be numbers"),
-            RuntimeError::ArgumentNotAString => write!(f, "argument is not a string"),
+            RuntimeError::BadArgument(msg) => write!(f, "{}", msg),
             RuntimeError::BadCall => write!(f, "Can only call functions and classes"),
-            RuntimeError::BadArgs(expected, got) => write!(f, "Expected {} arguments but got {}", expected, got),
+            RuntimeError::ArityMismatch(expected, got) => write!(f, "Expected {} arguments but got {}", expected, got),
             RuntimeError::UndefinedVariable(ref var) => write!(f, "Undefined variable '{}'", var),
         }
     }
@@ -166,9 +164,7 @@ impl VM {
         let b = self.pop();
         let a = self.pop();
         match (a.decode(), b.decode()) {
-            (Variant::Float(a), Variant::Float(b)) => {
-                self.push((a + b).into());
-            }
+            (Variant::Float(a), Variant::Float(b)) => { return self.push((a + b).into()); }
             (Variant::Obj(a), Variant::Obj(b)) => {
                 if let (Some(&Object::String(ref a)), Some(&Object::String(ref b))) = (self.heap.get(a), self.heap.get(b)) {
                     let c = a.clone() + b;
@@ -177,10 +173,10 @@ impl VM {
                     self.push(Value::object(handle));
                     return;
                 }
-                self.runtime_error(RuntimeError::ArgumentNotAString);
             }
-            _ => self.runtime_error(RuntimeError::ArgumentNotANumber)
+            _ => {}
         }
+         self.runtime_error(RuntimeError::BadArgument("Operands must be two numbers or two strings"));
     }
 
     fn sub(&mut self) {
@@ -201,14 +197,14 @@ impl VM {
             self.push((a/b).into());
             return;
         }
-        self.runtime_error(RuntimeError::ArgumentNotANumber);
+        self.runtime_error(RuntimeError::BadArgument("Operands must be numbers"))
     }
 
     fn neg(&mut self) {
         if let Variant::Float(a) = self.pop().decode() {
             self.push((-a).into());
         }
-        self.runtime_error(RuntimeError::ArgumentNotANumber);
+        self.runtime_error(RuntimeError::BadArgument("Operand must be a number"));
     }
 
     fn not(&mut self) {
@@ -339,7 +335,7 @@ impl VM {
             match o {
                 Object::LoxClosure(ref closure) => {
                     if closure.arity() != arity {
-                        self.runtime_error(RuntimeError::BadArgs(closure.arity(), arity));
+                        self.runtime_error(RuntimeError::ArityMismatch(closure.arity(), arity));
                     }
                     let frame = CallFrame::new(closure.clone(), frame_start);
                     self.frames.push(frame);
@@ -347,7 +343,7 @@ impl VM {
                 },
                 &Object::NativeFunction(ref native) => {
                     if native.arity != arity {
-                        self.runtime_error(RuntimeError::BadArgs(native.arity, arity));
+                        self.runtime_error(RuntimeError::ArityMismatch(native.arity, arity));
                     }
                     let val = {
                         (native.function)(&self.stack[frame_start..])
