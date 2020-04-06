@@ -33,20 +33,21 @@ struct CompileState {
     function: LoxFunctionBuilder,
     scope_depth: usize,
     breaks: Vec<usize>,
+    method: bool,
 }
 
 impl CompileState {
-    fn new(function: LoxFunctionBuilder, scope_depth: usize) -> Self {
+    fn new(method: bool, reserved: &str, function: LoxFunctionBuilder, scope_depth: usize) -> Self {
         // Reserve the first local
-        let locals = vec![Local { name: "RESERVED LOCAL".into(), depth: 1, captured: false}];
-        let upvalues = Vec::new();
+        let locals = vec![Local { name: reserved.into(), depth: 1, captured: false}];
         CompileState {
             line: 1,
             locals,
-            upvalues,
+            upvalues: Vec::new(),
             function,
             scope_depth,
             breaks: Vec::new(),
+            method,
         }
     }
 
@@ -153,7 +154,7 @@ impl<'g> Compiler<'g> {
     }
 
     pub fn compile(mut self, stmts: &[Stmt]) -> LoxFunction {
-        self.start_function("<top>", 0, 0);
+        self.start_function(false, "<top>", 0, 0);
         for stmt in stmts {
             self.compile_stmt(stmt);
         }
@@ -211,18 +212,28 @@ impl<'g> Compiler<'g> {
                     self.patch_jmp(b);
                 }
             },
-            Stmt::Function(ref f) => self.function_decl(f),
+            Stmt::Function(ref f) => {
+                self.function_decl(f);
+                self.var_define(&f.var, None);
+            }
             Stmt::Return(ref expr) => {
-                if let &Some(ref expr) = expr {
-                    self.compile_expr(expr);
-                } else {
-                    self.emit(Op::Nil);
-                }
-                self.emit(Op::Return);
+                self.emit_return(expr.as_ref());
             }
             Stmt::Class(ref class) => {
+                // Populate the stack with a closure per-method.
+                for method in &class.methods {
+                    // FIXME: This should somehow be aware of the enclosing class
+                    // so that we can prepend the classname in debugging.
+                    self.function_decl(method);
+                }
+                // Place the op_class to construct the class.
                 let idx = self.string_constant(class.var.name());
                 self.emit(Op::Class(idx));
+
+                let method_count = class.methods.len() as u8;
+                self.emit_byte(method_count);
+
+                // Attach the class to a variable.
                 self.var_define(&class.var, Some(idx));
             },
             Stmt::Break => {
@@ -320,6 +331,20 @@ impl<'g> Compiler<'g> {
                 let idx = self.string_constant(prop);
                 self.emit_byte(idx);
             },
+            ExprKind::This(ref var, _) => {
+                // FIXME: Hack
+                // This should be treated in the resolver
+                // and then handled like every other variable.
+                //
+                // If we don't check if this is a method then var_get
+                // will think that `this` is an upvalue rather than a local.
+                if self.state_mut().method {
+                    self.emit(Op::GetLocal);
+                    self.emit_byte(0);
+                } else {
+                    self.var_get(var);
+                }
+            },
             ref e => unimplemented!("{:?}", e),
         }
     }
@@ -402,7 +427,7 @@ impl<'g> Compiler<'g> {
         let body = &decl.body;
         let arity = parameters.len() as u8;
 
-        self.start_function(name, arity, 1);
+        self.start_function(decl.method, name, arity, 1);
 
         // Now that we've pushed to states we are in a new scope.
 
@@ -433,15 +458,14 @@ impl<'g> Compiler<'g> {
             });
             self.emit_byte(upvalue.index);
         }
-        self.var_define(&f.var, None);
     }
 
+    /// Walk outwards through enclosing scopes to find and mark locals as captured.
+    ///
+    /// We first find the scope that contains this captured value as a local, and then
+    /// mark it as captured so that it is closed over when it goes out of scope.
     fn resolve_upvalue(&mut self, name: &str) -> u8 {
-        //
-        // First we walk backwards to find the scope that contains this captured value as a local.
-        //
-        // Once found, we need to mark it as captured so that it is closed over when
-        // it goes out of scope.
+        debug!("resolve upvalue {:?}", name);
         let end = self.states.len() - 1;
         let (scope, mut index) =
             self.states[..end].iter_mut()
@@ -453,7 +477,7 @@ impl<'g> Compiler<'g> {
                 .next()
                 .expect("upvalue marked during resolution but could not be found");
 
-        // Add the upvalue to the immediately following scope and update the index
+        // Add the local as an upvalue to the inner scope and update the index
         index = self.states[scope + 1].add_upvalue(index, true);
         if scope >= self.states.len() - 2 {
             // If we are only one scope up from the current function, we are done.
@@ -466,15 +490,18 @@ impl<'g> Compiler<'g> {
         index
     }
 
-    fn start_function(&mut self, name: &str, arity: u8, scope: usize) {
+    // FIXME: what is this "scope" var? it's either 1 or 0
+    // I think it tracks the number of locals in a scope? it should just be
+    // 0 for all functions
+    fn start_function(&mut self, method: bool, name: &str, arity: u8, scope: usize) {
         let next_function = LoxFunctionBuilder::new(name, arity);
-        let state = CompileState::new(next_function, scope);
+        let reserved_var = if method { "this" } else { "" };
+        let state = CompileState::new(method, reserved_var, next_function, scope);
         self.states.push(state);
     }
 
     fn end_function(&mut self) -> LoxFunction {
-        self.emit(Op::Nil);
-        self.emit(Op::Return);
+        self.emit_return(None);
         let mut state = self.states.pop().expect("states to be nonempty");
         #[cfg(feature="dis")]
         {
@@ -483,6 +510,20 @@ impl<'g> Compiler<'g> {
         state.function.set_upvalue_count(state.upvalues.len());
         // TODO: This should be removed instead of copied so that it cannot be used again.
         state.function.build()
+    }
+
+    fn emit_return(&mut self, retval: Option<&Expr>) {
+        let state = self.state_mut();
+        let initializer = state.function.name() == "init" && state.method;
+        if initializer {
+            self.emit(Op::GetLocal);
+            self.emit_byte(0);
+        } else if let Some(ref expr) = retval {
+            self.compile_expr(expr);
+        } else {
+            self.emit(Op::Nil);
+        }
+        self.emit(Op::Return);
     }
 
     #[cfg(feature="dis")]

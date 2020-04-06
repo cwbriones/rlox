@@ -239,9 +239,6 @@ impl Resolver {
                 for method in &class_decl.methods {
                     let name = method.var.name();
                     let mut declaration = method.declaration.borrow_mut();
-                    if let Err(e) = self.scopes.init(name) {
-                        self.errors.push(e);
-                    };
 
                     if name == "init" {
                         self.resolve_function(&mut *declaration, FunctionType::Initializer);
@@ -303,6 +300,8 @@ impl Resolver {
                 if self.class.is_none() {
                     self.errors.push(ResolveError::ThisOutsideClass);
                 }
+                // FIXME: Resolving 'this' should always resolve to a local
+                // when in a method call, rather than an upvalue.
                 self.scopes.resolve_local(var);
             },
             ExprKind::Super(ref mut var, _, _) => {

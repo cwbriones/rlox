@@ -164,13 +164,13 @@ impl<'t> Parser<'t> {
                 let keyword = self.advance()?;
                 if let TokenType::Identifier = self.peek_type()? {
                     let ident = self.advance()?;
-                    let decl = self.function_declaration()?;
+                    let decl = self.function_declaration(false)?;
                     Ok(Stmt::Function(FunctionStmt::new(ident.value, decl)))
                 } else {
                     // TODO: Unify the parsing. If we could scan two tokens
                     // ahead we could fallback to a expression statement
                     // and this would already be handled.
-                    let decl = self.function_declaration()?;
+                    let decl = self.function_declaration(false)?;
                     self.expect(TokenType::Semicolon).after("lambda expression")?;
                     let pos = keyword.position;
                     let node = ExprKind::function(decl);
@@ -202,23 +202,23 @@ impl<'t> Parser<'t> {
             }
             if let TokenType::Keyword(Keyword::Class) = self.peek_type()? {
                 self.advance()?;
-                class_methods.push(self.function_statement()?);
+                class_methods.push(self.function_statement(true)?);
             } else {
-                methods.push(self.function_statement()?);
+                methods.push(self.function_statement(true)?);
             }
         }
         self.expect(TokenType::RightBrace).after("method declarations")?;
         Ok(Stmt::class(ident.value, methods, class_methods, superclass))
     }
 
-    fn function_statement(&mut self) -> Result<FunctionStmt> {
+    fn function_statement(&mut self, method: bool) -> Result<FunctionStmt> {
         let ident =
             self.expect(TokenType::Identifier).after("function name")?;
-        let decl = self.function_declaration()?;
+        let decl = self.function_declaration(method)?;
         Ok(FunctionStmt::new(ident.value, decl))
     }
 
-    fn function_declaration(&mut self) -> Result<FunctionDecl> {
+    fn function_declaration(&mut self, method: bool) -> Result<FunctionDecl> {
         self.expect(TokenType::LeftParen).after("function name")?;
         let mut parameters = Vec::new();
         match self.peek_type()? {
@@ -243,7 +243,7 @@ impl<'t> Parser<'t> {
         self.expect(TokenType::RightParen).after("parameters")?;
         self.expect(TokenType::LeftBrace).before("function body")?;
         let block = self.block()?;
-        Ok(FunctionDecl::new(parameters, block))
+        Ok(FunctionDecl::new(method, parameters, block))
     }
 
     // varDecl → "var" IDENTIFIER ( "=" expression )? ";" ;
@@ -599,7 +599,7 @@ impl<'t> Parser<'t> {
             },
             TokenType::Keyword(Keyword::Fun) => {
                 let token = self.advance()?;
-                let declaration = self.function_declaration()?;
+                let declaration = self.function_declaration(false)?;
                 let node = ExprKind::function(declaration);
                 Ok(Expr {
                     node,

@@ -11,6 +11,7 @@ use gc::object::LoxClass;
 use gc::object::LoxClosure;
 use gc::object::LoxUpValue;
 use gc::object::LoxInstance;
+use gc::object::BoundMethod;
 use gc::value::Value;
 use gc::value::Variant;
 use parser::ast::Stmt;
@@ -97,6 +98,8 @@ pub enum RuntimeError {
     DivideByZero,
     BadArgument(&'static str),
     BadCall,
+    BadGet,
+    BadSet,
     ArityMismatch(u8, u8),
     UndefinedVariable(String),
     UndefinedProperty(String),
@@ -108,6 +111,8 @@ impl ::std::fmt::Display for RuntimeError {
             RuntimeError::DivideByZero => write!(f, "divide by zero"),
             RuntimeError::BadArgument(msg) => write!(f, "{}", msg),
             RuntimeError::BadCall => write!(f, "Can only call functions and classes"),
+            RuntimeError::BadGet => write!(f, "Only instances have properties"),
+            RuntimeError::BadSet => write!(f, "Only instances have fields"),
             RuntimeError::ArityMismatch(expected, got) => write!(f, "Expected {} arguments but got {}", expected, got),
             RuntimeError::UndefinedVariable(ref var) => write!(f, "Undefined variable '{}'", var),
             RuntimeError::UndefinedProperty(ref prop) => write!(f, "Undefined property '{}'", prop),
@@ -330,11 +335,12 @@ impl VM {
     }
 
     fn call(&mut self, arity: u8) {
+        // FIXME: There's a ton of code duplication in this method.
         let last = self.stack.len();
         let frame_start = last - (arity + 1) as usize;
         let callee = self.stack[frame_start].decode();
 
-        // ensure callee is a closure
+        // ensure callee is a callable
         if let Variant::Obj(handle) = callee {
             match self.heap.get(handle) {
                 Some(Object::LoxClosure(ref closure)) => {
@@ -356,9 +362,41 @@ impl VM {
                     self.stack.push(val);
                     return;
                 },
-                Some(Object::LoxClass(_)) => {
+                Some(Object::LoxClass(ref class)) => {
+                    let init = class.method("init");
                     let val = self.allocate(Object::LoxInstance(LoxInstance::new(handle))).into();
+                    self.stack.pop(); // class
                     self.stack.push(val);
+                    // Allocate a fresh instance and replace the class reference on the stack
+                    let instance = self.allocate(Object::LoxInstance(LoxInstance::new(handle))).into();
+                    self.stack[frame_start] = instance;
+                    if let Some(init) = init {
+                        // constructor call
+                        if let Object::LoxClosure(closure) = self.heap.get(init).expect("valid closure") {
+                            debug!("arity: {}, args: {}", closure.arity(), arity);
+                            if closure.arity() != arity {
+                                self.runtime_error(RuntimeError::ArityMismatch(closure.arity(), arity));
+                            }
+                            let frame = CallFrame::new(closure.clone(), frame_start);
+                            self.frames.push(frame);
+                            return
+                        }
+                        panic!("constructor was not a closure");
+                    }
+                    // Call to default constructor with arguments
+                    if arity > 0 {
+                        self.runtime_error(RuntimeError::ArityMismatch(0, arity));
+                    }
+                    return;
+                },
+                Some(Object::BoundMethod(bound)) => {
+                    let closure = &bound.closure;
+                    if closure.arity() != arity {
+                        self.runtime_error(RuntimeError::ArityMismatch(closure.arity(), arity));
+                    }
+                    self.stack[frame_start] = bound.receiver.into();
+                    let frame = CallFrame::new(closure.clone(), frame_start);
+                    self.frames.push(frame);
                     return;
                 },
                 _ => {},
@@ -440,30 +478,63 @@ impl VM {
         } else {
             panic!("class constant was not a string");
         };
-        let val = self.allocate(Object::LoxClass(LoxClass::new(name))).into();
+        let method_count = self.read_byte();
+        let mut methods = HashMap::<String, Handle<Object>>::with_capacity(method_count as usize);
+        for _ in 0..method_count {
+            if let Variant::Obj(handle) = self.pop().decode() {
+                if let Some(Object::LoxClosure(method)) = self.heap.get(handle) {
+                    let name = method.name();
+                    methods.insert(name.to_owned(), handle.clone());
+                    continue;
+                }
+            }
+            panic!("method was not a closure");
+        }
+        let val = self.allocate(Object::LoxClass(LoxClass::new(name, methods))).into();
         self.push(val);
     }
 
     fn get_property(&mut self) {
         let idx = self.read_byte();
+
         let name_val = self.frame_mut().read_constant_at(idx);
-        let instance_val = self.pop();
+        let name = if let Variant::Obj(Object::String(name)) = name_val.decode().deref(&self.heap) {
+            name.clone()
+        } else {
+            panic!("property name was not a string")
+        };
 
-        let name = name_val.decode().deref(&self.heap);
-        let instance = instance_val.decode().deref(&self.heap);
-
-        if let Variant::Obj(Object::String(name)) = name {
-            if let Variant::Obj(Object::LoxInstance(inst)) = instance {
+        let val = self.pop();
+        if let Variant::Obj(ref handle) = val.decode() {
+            if let Some(Object::LoxInstance(inst)) = self.heap.get(handle) {
                 if let Some(prop) = inst.get_property(&name) {
                     self.push(prop);
-                } else {
-                    self.runtime_error(RuntimeError::UndefinedProperty(name.clone()));
+                    return
                 }
-                return
+                let class_handle = inst.class();
+                if let Some(method) = self.bind_instance(&name, handle, class_handle){
+                    self.push(method);
+                    return
+                }
+                self.runtime_error(RuntimeError::UndefinedProperty(name.clone()));
             }
-            panic!("expression was not an instance")
         }
-        panic!("property name was not a string")
+        self.runtime_error(RuntimeError::BadGet);
+    }
+
+    fn bind_instance(&mut self, name: &str, instance: &Handle<Object>, class: Handle<Object>)
+        -> Option<Value>
+    {
+        let class = self.heap.get(class)
+            .and_then(|o| o.as_class())
+            .expect("class instance");
+        class.method(name).map(|method| {
+            if let Object::LoxClosure(closure) = self.heap.get(method).cloned().expect("valid instance") {
+                self.allocate(Object::BoundMethod(BoundMethod::new(instance.clone(), closure))).into()
+            } else {
+                panic!("closure");
+            }
+        })
     }
 
     fn set_property(&mut self) {
@@ -485,7 +556,7 @@ impl VM {
                 self.push(val);
                 return
             }
-            panic!("expression was not an instance")
+            self.runtime_error(RuntimeError::BadSet);
         }
         panic!("property name was not a string")
     }

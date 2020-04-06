@@ -176,7 +176,8 @@ impl<'c> Disassembler<'c> {
 
     fn class(&mut self, idx: u8) {
         let val = self.chunk.get_constant(idx).expect("invalid constant segment index");
-        println!("OP_CLASS\t{}\t{}", idx, val.decode().deref(&self.heap));
+        let methods = self.read_byte();
+        println!("OP_CLASS\t{}\t{}\t({} method(s))", idx, val.decode().deref(&self.heap), methods);
     }
 
     fn get_property(&mut self) {

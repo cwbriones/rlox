@@ -167,13 +167,16 @@ impl FunctionStmt {
 
 #[derive(PartialEq, Debug)]
 pub struct FunctionDecl {
+    // FIXME: this field should probably be an enum variant instead.
+    pub method: bool,
     pub parameters: Vec<Variable>,
     pub body: Vec<Stmt>,
 }
 
 impl FunctionDecl {
-    pub(super) fn new(parameters: Vec<Variable>, body: Vec<Stmt>) -> Self {
+    pub(super) fn new(method:bool, parameters: Vec<Variable>, body: Vec<Stmt>) -> Self {
         FunctionDecl {
+            method,
             parameters,
             body,
         }

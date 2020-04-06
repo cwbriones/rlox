@@ -1,4 +1,5 @@
 use super::value::Value;
+use super::value::WithHeap;
 
 use ::chunk::Chunk;
 
@@ -20,19 +21,7 @@ pub enum Object {
     LoxClosure(LoxClosure),
     LoxInstance(LoxInstance),
     NativeFunction(NativeFunction),
-}
-
-impl Trace<Self> for Object {
-    fn trace(&self, tracer: &mut Tracer<Self>) {
-        match self {
-            Object::String(_) => {},
-            Object::LoxFunction(f) => f.trace(tracer),
-            Object::NativeFunction(_) => {},
-            Object::LoxClass(_) => {},
-            Object::LoxClosure(c) => c.trace(tracer),
-            Object::LoxInstance(c) => c.trace(tracer),
-        }
-    }
+    BoundMethod(BoundMethod),
 }
 
 /// Quickly implement a method that collapses the enum into an Option for
@@ -67,6 +56,20 @@ impl Object {
     impl_as!(as_instance, LoxInstance);
 }
 
+impl Trace<Self> for Object {
+    fn trace(&self, tracer: &mut Tracer<Self>) {
+        match self {
+            Object::String(_) => {},
+            Object::LoxFunction(f) => f.trace(tracer),
+            Object::NativeFunction(_) => {},
+            Object::LoxClass(c) => c.trace(tracer),
+            Object::LoxClosure(c) => c.trace(tracer),
+            Object::LoxInstance(c) => c.trace(tracer),
+            Object::BoundMethod(c) => c.trace(tracer),
+        }
+    }
+}
+
 impl Debug for Object {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
         match *self {
@@ -76,6 +79,7 @@ impl Debug for Object {
             Object::LoxClosure(ref cl) => write!(f, "<closure {:?}>", cl.function),
             Object::LoxInstance(ref inst) => write!(f, "<instance {}>", inst.classname()),
             Object::NativeFunction(ref na) => write!(f, "<native fn {:?}>", na.name),
+            Object::BoundMethod(ref b) => write!(f, "<bound method {:?}>", b.closure.function),
         }
     }
 }
@@ -87,8 +91,23 @@ impl Display for Object {
             Object::LoxFunction(ref fun) => write!(f, "<fn {}>", fun.name),
             Object::LoxClass(ref class) => write!(f, "{}", class.name),
             Object::LoxClosure(ref cl) => write!(f, "<fn {}>", cl.function.name),
-            Object::LoxInstance(ref inst) => write!(f, "instance {}", inst.classname()),
+            Object::LoxInstance(ref inst) => write!(f, "{} instance", inst.classname()),
             Object::NativeFunction(ref na) => write!(f, "<native fn {}>", na.name),
+            Object::BoundMethod(ref b) => write!(f, "<fn {}>", b.closure.function.name),
+        }
+    }
+}
+
+impl<'h, 'a> Display for WithHeap<'h, &'a Object> {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        match self.item {
+            Object::String(ref s) => write!(f, "{}", s),
+            Object::LoxFunction(ref fun) => write!(f, "<fn {}>", fun.name),
+            Object::LoxClass(ref class) => write!(f, "{}", class.name),
+            Object::LoxClosure(ref cl) => write!(f, "<fn {}>", cl.function.name),
+            Object::LoxInstance(ref inst) => write!(f, "{} instance", inst.classname()),
+            Object::NativeFunction(ref na) => write!(f, "<native fn {}>", na.name),
+            Object::BoundMethod(ref b) => write!(f, "<fn {}>", b.closure.function.name),
         }
     }
 }
@@ -106,6 +125,10 @@ impl LoxFunctionBuilder {
         let name: String = name.into();
         let chunk = Chunk::new(name.clone());
         LoxFunctionBuilder { name, arity, chunk, upvalue_count: 0 }
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
     }
 
     pub fn chunk_mut(&mut self) -> &mut Chunk {
@@ -165,7 +188,7 @@ pub struct NativeFunction {
     pub function: fn(&Heap<Object>, &[Value]) -> Value,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct LoxClosure {
     function: LoxFunction,
     upvalues: Vec<LoxUpValue>,
@@ -177,6 +200,10 @@ impl LoxClosure {
             function,
             upvalues,
         }
+    }
+
+    pub fn name(&self) -> &str {
+        self.function.name()
     }
 
     pub fn arity(&self) -> u8 {
@@ -205,7 +232,7 @@ impl Trace<Object> for LoxClosure {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct LoxUpValue {
     inner: Rc<RefCell<Result<Value, usize>>>,
 }
@@ -243,11 +270,22 @@ impl LoxUpValue {
 #[derive(Debug, Clone)]
 pub struct LoxClass {
     name: String,
+    methods: HashMap<String, Handle<Object>>,
 }
 
 impl LoxClass {
-    pub fn new(name: String) -> Self {
-        LoxClass { name }
+    pub fn new(name: String, methods: HashMap<String, Handle<Object>>) -> Self {
+        LoxClass { name, methods }
+    }
+
+    pub fn method(&self, name: &str) -> Option<Handle<Object>> {
+        self.methods.get(name).cloned()
+    }
+}
+
+impl Trace<Object> for LoxClass {
+    fn trace(&self, tracer: &mut Tracer<Object>) {
+        self.methods.values().for_each(|v| v.trace(tracer));
     }
 }
 
@@ -263,6 +301,10 @@ impl LoxInstance {
             class,
             fields: HashMap::new(),
         }
+    }
+
+    pub fn class(&self) -> Handle<Object> {
+        self.class
     }
 
     pub fn get_property(&self, name: &str) -> Option<Value> {
@@ -288,5 +330,24 @@ impl Trace<Object> for LoxInstance {
     fn trace(&self, tracer: &mut Tracer<Object>) {
         self.class.trace(tracer);
         self.fields.values().for_each(|v| v.trace(tracer));
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct BoundMethod {
+    pub receiver: Handle<Object>,
+    pub closure: LoxClosure,
+}
+
+impl BoundMethod {
+    pub fn new(receiver: Handle<Object>, closure: LoxClosure) -> Self {
+        BoundMethod { receiver, closure }
+    }
+}
+
+impl Trace<Object> for BoundMethod {
+    fn trace(&self, tracer: &mut Tracer<Object>) {
+        self.receiver.trace(tracer);
+        self.closure.trace(tracer);
     }
 }

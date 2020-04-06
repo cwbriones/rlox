@@ -53,7 +53,6 @@ impl Variant<Handle<Object>> {
             Variant::Nil => Variant::Nil,
         }
     }
-
 }
 
 const TAG_TRUE: u8 = 0x01;
@@ -185,6 +184,32 @@ impl Into<Value> for bool {
             Value::truelit()
         } else {
             Value::falselit()
+        }
+    }
+}
+
+pub struct WithHeap<'h, T> {
+    pub heap: &'h Heap<Object>,
+    pub item: T,
+}
+
+impl<'h, T> WithHeap<'h, T> {
+    fn with<U>(&self, item: U) -> WithHeap<U> {
+        WithHeap { heap: self.heap, item }
+    }
+}
+
+impl<'h> Display for WithHeap<'h, Value> {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        match self.item.decode() {
+            Variant::Nil => write!(f, "nil"),
+            Variant::False => write!(f, "false"),
+            Variant::True => write!(f, "true"),
+            Variant::Float(n) => write!(f, "{}", n),
+            Variant::Obj(o) => {
+                let o = self.heap.get(o).ok_or(::std::fmt::Error)?;
+                write!(f, "{}", self.with(o))
+            },
         }
     }
 }
