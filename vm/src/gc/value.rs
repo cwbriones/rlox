@@ -15,44 +15,12 @@ pub struct Value {
 }
 
 #[derive(Debug, Clone)]
-pub enum Variant<Obj> {
+pub enum Variant {
     Float(f64),
     True,
     False,
     Nil,
-    Obj(Obj)
-}
-
-impl Variant<Handle<Object>> {
-    pub fn cloned<'a>(&self, heap: &'a Heap<Object>) -> Variant<Object> {
-        match self {
-            Variant::Obj(o) => Variant::Obj(heap.get(o).expect("runtime reference to be valid").clone()),
-            Variant::Float(f) => Variant::Float(*f),
-            Variant::True => Variant::True,
-            Variant::False => Variant::False,
-            Variant::Nil => Variant::Nil,
-        }
-    }
-
-    pub fn deref<'a>(&self, heap: &'a Heap<Object>) -> Variant<&'a Object> {
-        match self {
-            Variant::Obj(o) => Variant::Obj(heap.get(o).expect("runtime reference to be valid")),
-            Variant::Float(f) => Variant::Float(*f),
-            Variant::True => Variant::True,
-            Variant::False => Variant::False,
-            Variant::Nil => Variant::Nil,
-        }
-    }
-
-    pub fn deref_mut<'a>(&self, heap: &'a mut Heap<Object>) -> Variant<&'a mut Object> {
-        match self {
-            Variant::Obj(o) => Variant::Obj(heap.get_mut(o).expect("runtime reference to be valid")),
-            Variant::Float(f) => Variant::Float(*f),
-            Variant::True => Variant::True,
-            Variant::False => Variant::False,
-            Variant::Nil => Variant::Nil,
-        }
-    }
+    Obj(Handle<Object>)
 }
 
 const TAG_TRUE: u8 = 0x01;
@@ -118,7 +86,7 @@ impl Value {
         !self.truthy()
     }
 
-    pub fn decode(&self) -> Variant<Handle<Object>> {
+    pub fn decode(&self) -> Variant {
         match self.handle.clone().decode() {
             Tag::Float(float) => {
                 Variant::Float(float)
@@ -131,6 +99,17 @@ impl Value {
             Tag::Tag(t) if t == TAG_NIL => Variant::Nil,
             Tag::Tag(t) => panic!("Unknown tag {}", t)
         }
+    }
+
+    pub fn as_object<'a>(&self) -> Option<Handle<Object>> {
+        match self.decode() {
+            Variant::Obj(o) => Some(o),
+            _ => None,
+        }
+    }
+
+    pub fn with_heap<'h>(&self, heap: &'h Heap<Object>) -> WithHeap<'h, Self> {
+        WithHeap::new(heap, *self)
     }
 }
 
@@ -160,18 +139,6 @@ impl Debug for Value {
     }
 }
 
-impl Display for Variant<&Object> {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-        match self {
-            Variant::Nil => write!(f, "nil"),
-            Variant::False => write!(f, "false"),
-            Variant::True => write!(f, "true"),
-            Variant::Float(n) => write!(f, "{}", n),
-            Variant::Obj(o) => write!(f, "{}", o),
-        }
-    }
-}
-
 impl Into<Value> for f64 {
    fn into(self) -> Value {
        Value::float(self)
@@ -194,7 +161,11 @@ pub struct WithHeap<'h, T> {
 }
 
 impl<'h, T> WithHeap<'h, T> {
-    fn with<U>(&self, item: U) -> WithHeap<U> {
+    pub fn new(heap: &'h Heap<Object>, item: T) -> WithHeap<'h, T> {
+        WithHeap { heap, item }
+    }
+
+    pub fn with<U>(&self, item: U) -> WithHeap<U> {
         WithHeap { heap: self.heap, item }
     }
 }

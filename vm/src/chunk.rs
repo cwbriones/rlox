@@ -3,7 +3,6 @@ use broom::prelude::Trace;
 use broom::prelude::Tracer;
 
 use gc::value::Value;
-use gc::value::Variant;
 use gc::object::Object;
 
 #[derive(Debug, Clone)]
@@ -116,7 +115,11 @@ impl Chunk {
     pub fn string_constant(&mut self, heap: &mut Heap<Object>, string: &str) -> u8 {
         // Scan constants for one that already exists
         for (i, c) in self.constants().enumerate() {
-            if let Variant::Obj(&Object::String(ref s)) = c.decode().deref(heap) {
+            let obj = c
+                .as_object()
+                .and_then(|o| heap.get(o))
+                .and_then(|o| o.as_string());
+            if let Some(s) = obj {
                 if s == string {
                     return i as u8
                 }

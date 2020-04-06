@@ -166,7 +166,7 @@ impl VM {
 
     fn print(&mut self) {
         let val = self.pop();
-        println!("{}", val.decode().deref(&self.heap));
+        println!("{}", val.with_heap(&self.heap));
     }
 
     fn add(&mut self) {
@@ -271,25 +271,25 @@ impl VM {
     }
 
     fn define_global(&mut self) {
-        let val = self.frame_mut().read_constant();
-        let obj = val.decode().deref(&self.heap);
-        if let Variant::Obj(Object::String(s)) = obj {
-            let lhs = self.stack.pop().unwrap();
-            self.globals.insert(s.clone(), lhs);
-            return;
-        }
-        panic!("DEFINE_GLOBAL constant was not a string");
+        let var = self.frame_mut().read_constant()
+            .as_object()
+            .and_then(|o| self.heap.get(o))
+            .and_then(|o| o.as_string())
+            .cloned()
+            .expect("constant to be a string");
+        let lhs = self.stack.pop().unwrap();
+        self.globals.insert(var, lhs);
     }
 
     fn set_global(&mut self) {
-        let val = self.frame_mut().read_constant();
-        let obj = val.decode().deref(&self.heap);
-        if let Variant::Obj(Object::String(s)) = obj {
-            let lhs = self.stack.last().cloned().unwrap();
-            self.globals.insert(s.clone(), lhs);
-            return;
-        }
-        panic!("SET_GLOBAL constant was not a string");
+        let var = self.frame_mut().read_constant()
+            .as_object()
+            .and_then(|o| self.heap.get(o))
+            .and_then(|o| o.as_string())
+            .cloned()
+            .expect("constant to be a string");
+        let lhs = self.stack.last().unwrap();
+        self.globals.insert(var, *lhs);
     }
 
     fn get_local(&mut self) {
@@ -445,13 +445,12 @@ impl VM {
     }
 
     fn closure(&mut self) {
-        let value = self.frame_mut().read_constant();
-        let obj = value.decode().deref(&self.heap);
-        let function = if let Variant::Obj(Object::LoxFunction(f)) = obj {
-            f.clone()
-        } else {
-            panic!("closure argument should be a function");
-        };
+        let val = self.frame_mut().read_constant();
+        let function = val.as_object()
+            .and_then(|o| self.heap.get(o))
+            .and_then(|o| o.as_function())
+            .cloned()
+            .expect("closure argument should be a function");
         let mut upvalues = Vec::new();
         for _ in 0..function.upvalue_count() {
             let is_local = self.read_byte() > 0;
@@ -472,12 +471,13 @@ impl VM {
     }
 
     fn class(&mut self, idx: u8) {
-        let obj = self.frame_mut().read_constant_at(idx);
-        let name = if let Variant::Obj(Object::String(name)) = obj.decode().deref(&self.heap) {
-            name.clone()
-        } else {
-            panic!("class constant was not a string");
-        };
+        let name = self.frame_mut()
+            .read_constant_at(idx)
+            .as_object()
+            .and_then(|o| self.heap.get(o))
+            .and_then(|o| o.as_string())
+            .cloned()
+            .expect("class constant to be a string");
         let method_count = self.read_byte();
         let mut methods = HashMap::<String, Handle<Object>>::with_capacity(method_count as usize);
         for _ in 0..method_count {
@@ -496,14 +496,13 @@ impl VM {
 
     fn get_property(&mut self) {
         let idx = self.read_byte();
-
-        let name_val = self.frame_mut().read_constant_at(idx);
-        let name = if let Variant::Obj(Object::String(name)) = name_val.decode().deref(&self.heap) {
-            name.clone()
-        } else {
-            panic!("property name was not a string")
-        };
-
+        let name = self.frame_mut()
+            .read_constant_at(idx)
+            .as_object()
+            .and_then(|o| self.heap.get(o))
+            .and_then(|o| o.as_string())
+            .cloned()
+            .expect("property name to be a string");
         let val = self.pop();
         if let Variant::Obj(ref handle) = val.decode() {
             if let Some(Object::LoxInstance(inst)) = self.heap.get(handle) {
@@ -547,11 +546,17 @@ impl VM {
         let val = self.pop();
         let instance_val = self.pop();
 
-        let name = name_val.decode().cloned(&self.heap);
-        let instance = instance_val.decode().deref_mut(&mut self.heap);
+        let name = name_val
+            .as_object()
+            .and_then(|o| self.heap.get(o))
+            .and_then(|o| o.as_string())
+            .cloned();
+        let instance = instance_val
+            .as_object()
+            .and_then(|o| self.heap.get_mut(o));
 
-        if let Variant::Obj(Object::String(name)) = name {
-            if let Variant::Obj(Object::LoxInstance(inst)) = instance {
+        if let Some(name) = name {
+            if let Some(Object::LoxInstance(ref mut inst)) = instance {
                 inst.set_property(&name, val);
                 self.push(val);
                 return

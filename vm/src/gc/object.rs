@@ -84,20 +84,6 @@ impl Debug for Object {
     }
 }
 
-impl Display for Object {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-        match *self {
-            Object::String(ref s) => write!(f, "{}", s),
-            Object::LoxFunction(ref fun) => write!(f, "<fn {}>", fun.name),
-            Object::LoxClass(ref class) => write!(f, "{}", class.name),
-            Object::LoxClosure(ref cl) => write!(f, "<fn {}>", cl.function.name),
-            Object::LoxInstance(ref inst) => write!(f, "{} instance", inst.classname()),
-            Object::NativeFunction(ref na) => write!(f, "<native fn {}>", na.name),
-            Object::BoundMethod(ref b) => write!(f, "<fn {}>", b.closure.function.name),
-        }
-    }
-}
-
 impl<'h, 'a> Display for WithHeap<'h, &'a Object> {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
         match self.item {

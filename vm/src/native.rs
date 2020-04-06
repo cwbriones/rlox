@@ -16,6 +16,6 @@ pub fn clock(_heap: &Heap<Object>, _args: &[Value]) -> Value {
 }
 
 pub fn native_print(heap: &Heap<Object>, args: &[Value]) -> Value {
-    println!("{}", args[1].decode().deref(heap));
+    println!("{}", args[1].with_heap(heap));
     Value::nil()
 }
