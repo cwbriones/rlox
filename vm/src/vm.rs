@@ -364,9 +364,6 @@ impl VM {
                 },
                 Some(Object::LoxClass(ref class)) => {
                     let init = class.method("init");
-                    let val = self.allocate(Object::LoxInstance(LoxInstance::new(handle))).into();
-                    self.stack.pop(); // class
-                    self.stack.push(val);
                     // Allocate a fresh instance and replace the class reference on the stack
                     let instance = self.allocate(Object::LoxInstance(LoxInstance::new(handle))).into();
                     self.stack[frame_start] = instance;

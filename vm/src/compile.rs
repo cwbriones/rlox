@@ -17,6 +17,7 @@ struct Local {
     pub name: String,
     pub depth: usize,
     pub captured: bool,
+    pub reserved: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -39,7 +40,7 @@ struct CompileState {
 impl CompileState {
     fn new(method: bool, reserved: &str, function: LoxFunctionBuilder, scope_depth: usize) -> Self {
         // Reserve the first local
-        let locals = vec![Local { name: reserved.into(), depth: 1, captured: false}];
+        let locals = vec![Local { name: reserved.into(), depth: 1, captured: false, reserved: true}];
         CompileState {
             line: 1,
             locals,
@@ -70,6 +71,7 @@ impl CompileState {
             name: var.into(),
             depth,
             captured: false,
+            reserved: false,
         });
 
         let i = (self.locals.len() - 1) as u8;
@@ -114,15 +116,15 @@ impl CompileState {
         self.scope_depth -= 1;
         let mut ops = Vec::new();
         self.locals.retain(|local| {
-            if local.depth < last {
+            if local.depth < last || local.reserved {
                 return true;
             }
             if local.captured {
                 ops.push(Op::CloseUpValue);
             } else {
                 ops.push(Op::Pop);
+                debug!("end_scope: remove local {:?}", local);
             }
-            debug!("end_scope: remove local {:?}", local);
             false
         });
         ops.into_iter().rev().for_each(|op| self.emit(op));
