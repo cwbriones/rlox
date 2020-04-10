@@ -152,6 +152,7 @@ impl VM {
         };
         let closure = LoxClosure::new(function, Vec::new());
         let value = self.allocate(Object::LoxClosure(closure)).into();
+
         self.push(value);
         self.call(0);
         self.run();
@@ -339,20 +340,68 @@ impl VM {
         self.push(Value::falselit());
     }
 
+    fn invoke(&mut self, arity: u8) {
+        let idx = self.read_byte();
+        let method = self.frame_mut()
+            .read_constant_at(idx)
+            .as_object()
+            .and_then(|o| self.heap.get(o))
+            .and_then(|o| o.as_string())
+            .expect("class constant to be a string");
+        let last = self.stack.len();
+        let frame_start = last - (arity + 1) as usize;
+        let instance = self.stack[frame_start]
+            .as_object()
+            .and_then(|h| self.heap.get(h))
+            .and_then(|o| o.as_instance());
+        if let Some(instance) = instance {
+            if let Some(field) = instance.get_property(&method) {
+                self.stack[frame_start] = field;
+                self.call(arity);
+                return;
+            }
+            let class = self.heap.get(instance.class())
+                .expect("valid object")
+                .as_class()
+                .expect("valid class reference");
+            if let Some(method) = class.method(&method) {
+                self.call_closure(method, arity);
+                return
+            }
+            self.runtime_error(RuntimeError::UndefinedProperty(method.into()))
+        }
+        self.runtime_error(RuntimeError::BadCall)
+    }
+
     fn call(&mut self, arity: u8) {
-        // FIXME: There's a ton of code duplication in this method.
         let last = self.stack.len();
         let frame_start = last - (arity + 1) as usize;
         let callee = self.stack[frame_start].decode();
+
         // ensure callee is a callable
         if let Variant::Obj(handle) = callee {
-            match self.heap.get(handle) {
-                Some(Object::LoxClosure(ref closure)) => {
-                    if closure.arity() != arity {
-                        self.runtime_error(RuntimeError::ArityMismatch(closure.arity(), arity));
+            match self.heap.get(handle).cloned() {
+                Some(Object::LoxClosure(_)) => {
+                    self.call_closure(handle, arity);
+                    return;
+                },
+                Some(Object::BoundMethod(bound)) => {
+                    self.stack[frame_start] = bound.receiver.into();
+                    self.call_closure(bound.closure, arity);
+                    return;
+                },
+                Some(Object::LoxClass(ref class)) => {
+                    // Allocate a fresh instance and replace the class reference on the stack
+                    let instance = self.allocate(Object::LoxInstance(LoxInstance::new(handle))).into();
+                    self.stack[frame_start] = instance;
+                    if let Some(init) = class.method("init") {
+                        self.call_closure(init, arity);
+                        return;
                     }
-                    let frame = CallFrame::new(closure.clone(), frame_start);
-                    self.frames.push(frame);
+                    // Call to default constructor with arguments
+                    if arity > 0 {
+                        self.runtime_error(RuntimeError::ArityMismatch(0, arity));
+                    }
                     return;
                 },
                 Some(Object::NativeFunction(ref native)) => {
@@ -366,44 +415,24 @@ impl VM {
                     self.stack.push(val);
                     return;
                 },
-                Some(Object::LoxClass(ref class)) => {
-                    let init = class.method("init");
-                    // Allocate a fresh instance and replace the class reference on the stack
-                    let instance = self.allocate(Object::LoxInstance(LoxInstance::new(handle))).into();
-                    self.stack[frame_start] = instance;
-                    if let Some(init) = init {
-                        // constructor call
-                        if let Object::LoxClosure(closure) = self.heap.get(init).expect("valid closure") {
-                            debug!("arity: {}, args: {}", closure.arity(), arity);
-                            if closure.arity() != arity {
-                                self.runtime_error(RuntimeError::ArityMismatch(closure.arity(), arity));
-                            }
-                            let frame = CallFrame::new(closure.clone(), frame_start);
-                            self.frames.push(frame);
-                            return
-                        }
-                        panic!("constructor was not a closure");
-                    }
-                    // Call to default constructor with arguments
-                    if arity > 0 {
-                        self.runtime_error(RuntimeError::ArityMismatch(0, arity));
-                    }
-                    return;
-                },
-                Some(Object::BoundMethod(bound)) => {
-                    let closure = &bound.closure;
-                    if closure.arity() != arity {
-                        self.runtime_error(RuntimeError::ArityMismatch(closure.arity(), arity));
-                    }
-                    self.stack[frame_start] = bound.receiver.into();
-                    let frame = CallFrame::new(closure.clone(), frame_start);
-                    self.frames.push(frame);
-                    return;
-                },
                 _ => {},
             }
         }
         self.runtime_error(RuntimeError::BadCall)
+    }
+
+    fn call_closure(&mut self, handle: Handle<Object>, arity: u8) {
+        let closure = self.heap.get(handle)
+            .and_then(|o| o.as_closure())
+            .expect("redundant cast to succeed");
+        let last = self.stack.len();
+        let frame_start = last - (arity + 1) as usize;
+        if closure.arity() != arity {
+            self.runtime_error(RuntimeError::ArityMismatch(closure.arity(), arity));
+        }
+        let frame = CallFrame::new(closure.clone(), frame_start);
+        self.frames.push(frame);
+        return;
     }
 
     fn ret(&mut self) {
@@ -528,11 +557,11 @@ impl VM {
             .and_then(|o| o.as_class())
             .expect("class instance");
         class.method(name).map(|method| {
-            if let Object::LoxClosure(closure) = self.heap.get(method).cloned().expect("valid instance") {
-                self.allocate(Object::BoundMethod(BoundMethod::new(instance.clone(), closure))).into()
-            } else {
-                panic!("closure");
+            #[cfg(debug_assertions)]
+            {
+                self.heap.get(method).and_then(|o| o.as_closure()).expect("valid instance");
             }
+            self.allocate(Object::BoundMethod(BoundMethod::new(instance.clone(), method))).into()
         })
     }
 

@@ -8,11 +8,10 @@ pub fn clock(_heap: &Heap<Object>, _args: &[Value]) -> Value {
     let epoch_time =
         SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .expect("[FATAL] failed to get system time");
+        .expect("[FATAL] failed to get system time")
+        .as_secs_f64();
 
-    let time_ms = epoch_time.as_secs() * 1000 + epoch_time.subsec_nanos() as u64 / 1_000_000;
-
-    Value::float(time_ms as f64)
+    Value::float(epoch_time)
 }
 
 pub fn native_print(heap: &Heap<Object>, args: &[Value]) -> Value {

@@ -140,6 +140,12 @@ impl<'c> Disassembler<'c> {
         println!("OP_CALL_{}", arity);
     }
 
+    fn invoke(&mut self, arity: u8) {
+        let idx = self.read_byte();
+        let val = self.chunk.get_constant(idx).expect("invalid constant segment index");
+        println!("OP_INVOKE_{} {}", arity, val.with_heap(&self.heap));
+    }
+
     fn close_upvalue(&self) {
         println!("OP_CLOSE_UPVALUE");
     }

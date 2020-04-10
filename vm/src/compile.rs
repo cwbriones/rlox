@@ -309,16 +309,30 @@ impl<'g> Compiler<'g> {
                 }
             }
             ExprKind::Call(ref call) => {
-                self.compile_expr(&call.callee);
                 let arity = call.arguments.len();
-                for arg in call.arguments.iter() {
-                    self.compile_expr(arg);
-                }
                 if arity > 8 {
                     panic!("Too many arguments.");
                 }
-                let op = Op::Call(arity as u8);
-                self.emit(op);
+
+                let invoke = if let ExprKind::Get(ref lhs, ref method) = call.callee.node {
+                    self.compile_expr(lhs);
+                    Some(method)
+                } else {
+                    self.compile_expr(&call.callee);
+                    None
+                };
+
+                for arg in call.arguments.iter() {
+                    self.compile_expr(arg);
+                }
+
+                if let Some(method) = invoke {
+                    self.emit(Op::Invoke(arity as u8));
+                    let idx = self.string_constant(method);
+                    self.emit_byte(idx);
+                } else {
+                    self.emit(Op::Call(arity as u8));
+                }
             },
             ExprKind::Get(ref lhs, ref prop) => {
                 self.compile_expr(lhs);

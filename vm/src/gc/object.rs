@@ -79,7 +79,7 @@ impl Debug for Object {
             Object::LoxClosure(ref cl) => write!(f, "<closure {:?}>", cl.function),
             Object::LoxInstance(ref inst) => write!(f, "<instance {}>", inst.classname()),
             Object::NativeFunction(ref na) => write!(f, "<native fn {:?}>", na.name),
-            Object::BoundMethod(ref b) => write!(f, "<bound method {:?}>", b.closure.function),
+            Object::BoundMethod(ref b) => write!(f, "<bound method {:?}>", b.closure),
         }
     }
 }
@@ -93,7 +93,10 @@ impl<'h, 'a> Display for WithHeap<'h, &'a Object> {
             Object::LoxClosure(ref cl) => write!(f, "<fn {}>", cl.function.name),
             Object::LoxInstance(ref inst) => write!(f, "{} instance", inst.classname()),
             Object::NativeFunction(ref na) => write!(f, "<native fn {}>", na.name),
-            Object::BoundMethod(ref b) => write!(f, "<fn {}>", b.closure.function.name),
+            Object::BoundMethod(ref b) => write!(f, "<fn {}>", {
+                let obj = self.heap.get(b.closure).expect("live reference");
+                self.with(obj)
+            }),
         }
     }
 }
@@ -322,11 +325,11 @@ impl Trace<Object> for LoxInstance {
 #[derive(Debug, Clone)]
 pub struct BoundMethod {
     pub receiver: Handle<Object>,
-    pub closure: LoxClosure,
+    pub closure: Handle<Object>,
 }
 
 impl BoundMethod {
-    pub fn new(receiver: Handle<Object>, closure: LoxClosure) -> Self {
+    pub fn new(receiver: Handle<Object>, closure: Handle<Object>) -> Self {
         BoundMethod { receiver, closure }
     }
 }

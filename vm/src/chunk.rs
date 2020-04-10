@@ -225,6 +225,7 @@ pub enum Op {
     Loop,
     Immediate,
     Call(u8),
+    Invoke(u8),
     // Invoke_0,
     // Invoke_1,
     // Invoke_2,
@@ -277,17 +278,18 @@ impl Op {
             Op::Nil => buf.push(0x14),
             Op::True => buf.push(0x15),
             Op::False => buf.push(0x16),
-            // 0x17 -> 0x1e
+            // 0x17 -> 0x1f
             Op::Call(a) => buf.push(0x17 + a),
-            Op::Loop => buf.push(0x1f),
-            Op::CloseUpValue => buf.push(0x20),
-            Op::GetUpValue => buf.push(0x21),
-            Op::SetUpValue => buf.push(0x22),
-            Op::Closure => buf.push(0x23),
-            Op::DefineGlobal => buf.push(0x24),
-            Op::Class(idx) => { buf.push(0x25); buf.push(idx); },
-            Op::GetProperty => buf.push(0x26),
-            Op::SetProperty => buf.push(0x27),
+            Op::Loop => buf.push(0x20),
+            Op::CloseUpValue => buf.push(0x21),
+            Op::GetUpValue => buf.push(0x22),
+            Op::SetUpValue => buf.push(0x23),
+            Op::Closure => buf.push(0x24),
+            Op::DefineGlobal => buf.push(0x25),
+            Op::Class(idx) => { buf.push(0x26); buf.push(idx); },
+            Op::GetProperty => buf.push(0x27),
+            Op::SetProperty => buf.push(0x28),
+            Op::Invoke(a) => buf.push(0x29 + a),
         }
     }
 }
@@ -318,18 +320,19 @@ macro_rules! decode_op {
             0x14 => $this.imm_nil(),
             0x15 => $this.imm_true(),
             0x16 => $this.imm_false(),
-            a @ 0x17..=0x1e => {
+            a @ 0x17..=0x1f => {
                 $this.call(a - 0x17)
             },
-            0x1f => $this.op_loop(),
-            0x20 => $this.close_upvalue(),
-            0x21 => $this.get_upvalue(),
-            0x22 => $this.set_upvalue(),
-            0x23 => $this.closure(),
-            0x24 => $this.define_global(),
-            0x25 => { let idx = $this.read_byte(); $this.class(idx); }
-            0x26 => $this.get_property(),
-            0x27 => $this.set_property(),
+            0x20 => $this.op_loop(),
+            0x21 => $this.close_upvalue(),
+            0x22 => $this.get_upvalue(),
+            0x23 => $this.set_upvalue(),
+            0x24 => $this.closure(),
+            0x25 => $this.define_global(),
+            0x26 => { let idx = $this.read_byte(); $this.class(idx); }
+            0x27 => $this.get_property(),
+            0x28 => $this.set_property(),
+            a @ 0x29..=0x31 => $this.invoke(a - 0x29),
             _ => {
                 panic!("Unknown op {}", $op);
             }
