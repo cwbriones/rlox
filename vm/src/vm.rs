@@ -35,13 +35,13 @@ pub struct VM {
 }
 
 pub struct CallFrame {
-    closure: LoxClosure,
+    closure: Handle<Object>,
     ip: usize,
     stack_start: usize,
 }
 
 impl CallFrame {
-    pub fn new(closure: LoxClosure, stack_start: usize) -> Self {
+    pub fn new(closure: Handle<Object>, stack_start: usize) -> Self {
         CallFrame {
             closure,
             ip: 0,
@@ -80,7 +80,12 @@ impl CallFrame {
         where
             F: FnOnce(&Chunk) -> T
     {
-        fun(self.closure.chunk())
+        unsafe {
+            let closure = self.closure.get_unchecked()
+                .as_closure()
+                .expect("closure reference by construction");
+            fun(closure.chunk())
+        }
     }
 }
 
@@ -430,7 +435,7 @@ impl VM {
         if closure.arity() != arity {
             self.runtime_error(RuntimeError::ArityMismatch(closure.arity(), arity));
         }
-        let frame = CallFrame::new(closure.clone(), frame_start);
+        let frame = CallFrame::new(handle, frame_start);
         self.frames.push(frame);
         return;
     }
@@ -596,7 +601,10 @@ impl VM {
     }
 
     fn current_closure(&mut self) -> &mut LoxClosure {
-        &mut self.frame_mut().closure
+        let handle = self.frame_mut().closure;
+        self.heap.get_mut(handle)
+            .and_then(|o| o.as_closure_mut())
+            .expect("valid closure")
     }
 
     fn capture_upvalue(&mut self, idx: usize) -> LoxUpValue {

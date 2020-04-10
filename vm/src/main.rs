@@ -8,6 +8,7 @@ extern crate parser;
 extern crate failure;
 extern crate env_logger;
 extern crate broom;
+extern crate fnv;
 
 #[macro_use]
 extern crate log;

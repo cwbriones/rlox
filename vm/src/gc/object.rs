@@ -54,6 +54,14 @@ impl Object {
     impl_as!(as_closure, LoxClosure);
     impl_as!(as_class, LoxClass);
     impl_as!(as_instance, LoxInstance);
+
+    pub fn as_closure_mut(&mut self) -> Option<&mut LoxClosure> {
+        if let Object::LoxClosure(ref mut o) = *self {
+            Some(o)
+        } else {
+            None
+        }
+    }
 }
 
 impl Trace<Self> for Object {
