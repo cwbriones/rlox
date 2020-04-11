@@ -7,13 +7,13 @@ use broom::prelude::Trace;
 use broom::prelude::Tracer;
 use broom::prelude::Heap;
 use broom::prelude::Handle;
+use fnv::FnvBuildHasher;
 
 use std::fmt::{Debug, Display};
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-#[derive(Clone)]
 pub enum Object {
     String(String),
     LoxFunction(LoxFunction),
@@ -267,11 +267,11 @@ impl LoxUpValue {
 #[derive(Debug, Clone)]
 pub struct LoxClass {
     name: String,
-    methods: HashMap<String, Handle<Object>>,
+    methods: HashMap<String, Handle<Object>, FnvBuildHasher>,
 }
 
 impl LoxClass {
-    pub fn new(name: String, methods: HashMap<String, Handle<Object>>) -> Self {
+    pub fn new(name: String, methods: HashMap<String, Handle<Object>, FnvBuildHasher>) -> Self {
         LoxClass { name, methods }
     }
 
@@ -286,17 +286,17 @@ impl Trace<Object> for LoxClass {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct LoxInstance {
     class: Handle<Object>,
-    fields: HashMap<String, Value>,
+    fields: HashMap<String, Value, FnvBuildHasher>,
 }
 
 impl LoxInstance {
     pub fn new(class: Handle<Object>) -> Self {
         LoxInstance {
             class,
-            fields: HashMap::new(),
+            fields: HashMap::with_hasher(FnvBuildHasher::default()),
         }
     }
 
@@ -309,6 +309,10 @@ impl LoxInstance {
     }
 
     pub fn set_property(&mut self, name: &str, value: Value) {
+        if let Some(v) = self.fields.get_mut(name) {
+            *v = value;
+            return;
+        }
         self.fields.insert(name.into(), value);
     }
 

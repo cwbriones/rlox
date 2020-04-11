@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use broom::Heap;
 use broom::Handle;
+use fnv::FnvBuildHasher;
 
 use chunk::Chunk;
 use compile::Compiler;
@@ -27,7 +28,7 @@ pub struct VM {
     // to scan the stack to address this at this point.
     heap: Heap<Object>,
     next_gc: usize,
-    globals: HashMap<String, Value>,
+    globals: HashMap<String, Value, FnvBuildHasher>,
     open_upvalues: Vec<LoxUpValue>,
 
     stack: Vec<Value>,
@@ -135,7 +136,7 @@ impl VM {
             stack: Vec::with_capacity(STACK_SIZE),
             heap: Heap::default(),
             next_gc: GC_TRIGGER_COUNT,
-            globals: HashMap::new(),
+            globals: HashMap::with_hasher(FnvBuildHasher::default()),
             frames: Vec::with_capacity(256),
             open_upvalues: Vec::with_capacity(16),
         }
@@ -186,11 +187,10 @@ impl VM {
         match (a.decode(), b.decode()) {
             (Variant::Float(a), Variant::Float(b)) => { return self.push((a + b).into()); }
             (Variant::Obj(a), Variant::Obj(b)) => {
-                if let (Some(&Object::String(ref a)), Some(&Object::String(ref b))) = (self.heap.get(a), self.heap.get(b)) {
+                if let (&Object::String(ref a), &Object::String(ref b)) = (self.deref(a), self.deref(b)) {
                     let c = a.clone() + b;
-                    // FIXME: Gc Rooting.
-                    let handle = self.heap.insert(Object::String(c)).into_handle();
-                    self.push(Value::object(handle));
+                    let val = self.allocate(Object::String(c)).into();
+                    self.push(val);
                     return;
                 }
             }
@@ -266,25 +266,25 @@ impl VM {
     }
 
     fn get_global(&mut self) {
-        let val = self.frame_mut().read_constant();
+        let global = self.frame_mut()
+            .read_constant()
+            .as_object()
+            .map(|o| self.deref(o))
+            .and_then(|o| o.as_string())
+            .expect("GET_GLOBAL constant was not a string");
 
-        if let Variant::Obj(h) = val.decode() {
-            if let Some(&Object::String(ref s)) = self.heap.get(h) {
-                if let Some(val) = self.globals.get(s).cloned() {
-                    self.push(val);
-                    return;
-                } else {
-                    self.runtime_error(RuntimeError::UndefinedVariable(s.clone()));
-                }
-            }
+        if let Some(val) = self.globals.get(global).cloned() {
+            self.push(val);
+            return;
+        } else {
+            self.runtime_error(RuntimeError::UndefinedVariable(global.clone()));
         }
-        panic!("GET_GLOBAL constant was not a string");
     }
 
     fn define_global(&mut self) {
         let var = self.frame_mut().read_constant()
             .as_object()
-            .and_then(|o| self.heap.get(o))
+            .map(|o| self.deref(o))
             .and_then(|o| o.as_string())
             .cloned()
             .expect("constant to be a string");
@@ -293,14 +293,23 @@ impl VM {
     }
 
     fn set_global(&mut self) {
-        let var = self.frame_mut().read_constant()
+        let handle = self.frame_mut().read_constant()
             .as_object()
-            .and_then(|o| self.heap.get(o))
-            .and_then(|o| o.as_string())
-            .cloned()
+            .filter(|&o| self.deref(o).as_string().is_some())
             .expect("constant to be a string");
-        let lhs = self.stack.last().unwrap();
-        self.globals.insert(var, *lhs);
+
+        let var = unsafe {
+            handle.get_unchecked()
+                .as_string()
+                .unwrap()
+        };
+
+        let val = *self.stack.last().unwrap();
+        if let Some(slot) = self.globals.get_mut(var) {
+            *slot = val;
+            return;
+        }
+        self.globals.insert(var.clone(), val);
     }
 
     fn get_local(&mut self) {
@@ -350,14 +359,14 @@ impl VM {
         let method = self.frame_mut()
             .read_constant_at(idx)
             .as_object()
-            .and_then(|o| self.heap.get(o))
+            .map(|o| self.deref(o))
             .and_then(|o| o.as_string())
             .expect("class constant to be a string");
         let last = self.stack.len();
         let frame_start = last - (arity + 1) as usize;
         let instance = self.stack[frame_start]
             .as_object()
-            .and_then(|h| self.heap.get(h))
+            .map(|h| self.deref(h))
             .and_then(|o| o.as_instance());
         if let Some(instance) = instance {
             if let Some(field) = instance.get_property(&method) {
@@ -365,8 +374,7 @@ impl VM {
                 self.call(arity);
                 return;
             }
-            let class = self.heap.get(instance.class())
-                .expect("valid object")
+            let class = self.deref(instance.class())
                 .as_class()
                 .expect("valid class reference");
             if let Some(method) = class.method(&method) {
@@ -385,21 +393,26 @@ impl VM {
 
         // ensure callee is a callable
         if let Variant::Obj(handle) = callee {
-            match self.heap.get(handle).cloned() {
-                Some(Object::LoxClosure(_)) => {
+            match unsafe { self.heap.get_unchecked(handle) } {
+                &Object::LoxClosure(_) => {
                     self.call_closure(handle, arity);
                     return;
                 },
-                Some(Object::BoundMethod(bound)) => {
+                &Object::BoundMethod(ref bound) => {
+                    let closure = bound.closure.clone();
                     self.stack[frame_start] = bound.receiver.into();
-                    self.call_closure(bound.closure, arity);
+                    self.call_closure(closure, arity);
                     return;
                 },
-                Some(Object::LoxClass(ref class)) => {
+                &Object::LoxClass(ref class) => {
                     // Allocate a fresh instance and replace the class reference on the stack
-                    let instance = self.allocate(Object::LoxInstance(LoxInstance::new(handle))).into();
-                    self.stack[frame_start] = instance;
-                    if let Some(init) = class.method("init") {
+                    let method = class.method("init").clone();
+                    self.stack[frame_start] = self.allocate(
+                        Object::LoxInstance(
+                            LoxInstance::new(handle)
+                        )
+                    ).into();
+                    if let Some(init) = method {
                         self.call_closure(init, arity);
                         return;
                     }
@@ -409,7 +422,7 @@ impl VM {
                     }
                     return;
                 },
-                Some(Object::NativeFunction(ref native)) => {
+                &Object::NativeFunction(ref native) => {
                     if native.arity != arity {
                         self.runtime_error(RuntimeError::ArityMismatch(native.arity, arity));
                     }
@@ -427,8 +440,8 @@ impl VM {
     }
 
     fn call_closure(&mut self, handle: Handle<Object>, arity: u8) {
-        let closure = self.heap.get(handle)
-            .and_then(|o| o.as_closure())
+        let closure = self.deref(handle)
+            .as_closure()
             .expect("redundant cast to succeed");
         let last = self.stack.len();
         let frame_start = last - (arity + 1) as usize;
@@ -481,7 +494,7 @@ impl VM {
     fn closure(&mut self) {
         let val = self.frame_mut().read_constant();
         let function = val.as_object()
-            .and_then(|o| self.heap.get(o))
+            .map(|o| self.deref(o))
             .and_then(|o| o.as_function())
             .cloned()
             .expect("closure argument should be a function");
@@ -508,15 +521,17 @@ impl VM {
         let name = self.frame_mut()
             .read_constant_at(idx)
             .as_object()
-            .and_then(|o| self.heap.get(o))
+            .map(|o| self.deref(o))
             .and_then(|o| o.as_string())
             .cloned()
             .expect("class constant to be a string");
         let method_count = self.read_byte();
-        let mut methods = HashMap::<String, Handle<Object>>::with_capacity(method_count as usize);
+        let mut methods = HashMap::<String, Handle<Object>, FnvBuildHasher>::with_hasher(
+            FnvBuildHasher::default()
+        );
         for _ in 0..method_count {
             if let Variant::Obj(handle) = self.pop().decode() {
-                if let Some(Object::LoxClosure(method)) = self.heap.get(handle) {
+                if let &Object::LoxClosure(ref method) = self.deref(handle) {
                     let name = method.name();
                     methods.insert(name.to_owned(), handle.clone());
                     continue;
@@ -530,16 +545,27 @@ impl VM {
 
     fn get_property(&mut self) {
         let idx = self.read_byte();
+        // FIXME: Don't clone this string.
         let name = self.frame_mut()
             .read_constant_at(idx)
             .as_object()
-            .and_then(|o| self.heap.get(o))
-            .and_then(|o| o.as_string())
-            .cloned()
+            .filter(|o| self.deref(*o).as_string().is_some())
             .expect("property name to be a string");
         let val = self.pop();
         if let Variant::Obj(ref handle) = val.decode() {
-            if let Some(Object::LoxInstance(inst)) = self.heap.get(handle) {
+            if let &Object::LoxInstance(ref inst) = self.deref(*handle) {
+                let name = unsafe {
+                    // Safety: this reference is reachable via the stack
+                    // which means that it must be live.
+                    //
+                    // It must be a string because we survived the expect above.
+                    //
+                    // Strings are handled immutably here, and so there are not any
+                    // mutable references to the same string.
+                    name.get_unchecked()
+                        .as_string()
+                        .unwrap()
+                };
                 if let Some(prop) = inst.get_property(&name) {
                     self.push(prop);
                     return
@@ -558,15 +584,15 @@ impl VM {
     fn bind_instance(&mut self, name: &str, instance: &Handle<Object>, class: Handle<Object>)
         -> Option<Value>
     {
-        let class = self.heap.get(class)
-            .and_then(|o| o.as_class())
+        let class = self.deref(class)
+            .as_class()
             .expect("class instance");
         class.method(name).map(|method| {
             #[cfg(debug_assertions)]
             {
-                self.heap.get(method).and_then(|o| o.as_closure()).expect("valid instance");
+                self.deref(method).as_closure().expect("valid instance");
             }
-            self.allocate(Object::BoundMethod(BoundMethod::new(instance.clone(), method))).into()
+            self.allocate(Object::BoundMethod(BoundMethod::new(*instance, method))).into()
         })
     }
 
@@ -582,28 +608,37 @@ impl VM {
 
         let name = name_val
             .as_object()
-            .and_then(|o| self.heap.get(o))
-            .and_then(|o| o.as_string())
-            .cloned();
+            .filter(|o| self.deref(*o).as_string().is_some())
+            .expect("property name was not a string");
+
         let instance = instance_val
             .as_object()
-            .and_then(|o| self.heap.get_mut(o));
+            .map(|o| self.heap.get_mut_unchecked(o));
 
-        if let Some(name) = name {
-            if let Some(Object::LoxInstance(ref mut inst)) = instance {
-                inst.set_property(&name, val);
-                self.push(val);
-                return
-            }
-            self.runtime_error(RuntimeError::BadSet);
+        if let Some(Object::LoxInstance(ref mut inst)) = instance {
+            let name = unsafe {
+                // Safety: this reference is reachable via the stack
+                // which means that it must be live.
+                //
+                // It must be a string because we survived the expect above.
+                //
+                // Strings are handled immutably here, and so there are not any
+                // mutable references to the same string.
+                name.get_unchecked()
+                    .as_string()
+                    .unwrap()
+            };
+            inst.set_property(name, val);
+            self.push(val);
+            return
         }
-        panic!("property name was not a string")
+        self.runtime_error(RuntimeError::BadSet);
     }
 
     fn current_closure(&mut self) -> &mut LoxClosure {
         let handle = self.frame_mut().closure;
-        self.heap.get_mut(handle)
-            .and_then(|o| o.as_closure_mut())
+        self.deref_mut(handle)
+            .as_closure_mut()
             .expect("valid closure")
     }
 
@@ -696,6 +731,14 @@ impl VM {
             self.heap.clean_excluding(exclude);
         }
         handle
+    }
+
+    fn deref(&self, o: Handle<Object>) -> &Object {
+        unsafe { self.heap.get_unchecked(o) }
+    }
+
+    fn deref_mut(&mut self, o: Handle<Object>) -> &mut Object {
+        self.heap.get_mut_unchecked(o)
     }
 }
 

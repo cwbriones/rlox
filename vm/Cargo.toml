@@ -10,6 +10,7 @@ parser = { path = "../parser" }
 broom = { path = "../broom" }
 integration = { path = "../integration" }
 env_logger = "*"
+fnv = "1.0.3"
 
 [features]
 default = []
