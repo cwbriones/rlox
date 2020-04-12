@@ -23,7 +23,7 @@ impl<'c> Disassembler<'c> {
 
     pub fn disassemble(mut self) {
         let bytes = self.chunk.as_ref();
-        println!("== {} ==", self.chunk.name());
+        eprintln!("== {} ==", self.chunk.name());
         while self.offset < bytes.len() {
             self.disassemble_instruction();
         }
@@ -44,62 +44,62 @@ impl<'c> Disassembler<'c> {
 
     fn constant(&mut self, idx: u8) {
         let val = self.chunk.get_constant(idx).expect("invalid constant segment index");
-        println!("OP_CONSTANT\t{}\t{:?}", idx, val);
+        eprintln!("OP_CONSTANT\t{}\t{:?}", idx, val);
     }
 
-    fn ret(&self) { println!("OP_RETURN"); }
-    fn print(&self) { println!("OP_PRINT"); }
-    fn add(&self) { println!("OP_ADD"); }
-    fn sub(&self) { println!("OP_SUB"); }
-    fn mul(&self) { println!("OP_MUL"); }
-    fn div(&self) { println!("OP_DIV"); }
-    fn neg(&self) { println!("OP_NEG"); }
-    fn not(&self) { println!("OP_NOT"); }
-    fn eq(&self) { println!("OP_EQ"); }
-    fn gt(&self) { println!("OP_GT"); }
-    fn lt(&self) { println!("OP_LT"); }
-    fn pop(&self) { println!("OP_POP"); }
+    fn ret(&self) { eprintln!("OP_RETURN"); }
+    fn print(&self) { eprintln!("OP_PRINT"); }
+    fn add(&self) { eprintln!("OP_ADD"); }
+    fn sub(&self) { eprintln!("OP_SUB"); }
+    fn mul(&self) { eprintln!("OP_MUL"); }
+    fn div(&self) { eprintln!("OP_DIV"); }
+    fn neg(&self) { eprintln!("OP_NEG"); }
+    fn not(&self) { eprintln!("OP_NOT"); }
+    fn eq(&self) { eprintln!("OP_EQ"); }
+    fn gt(&self) { eprintln!("OP_GT"); }
+    fn lt(&self) { eprintln!("OP_LT"); }
+    fn pop(&self) { eprintln!("OP_POP"); }
 
     fn jmp(&mut self) {
         let offset = self.offset - 1;
         let ip = self.read_u16();
-        println!("OP_JUMP\t{} -> {}", offset, ip);
+        eprintln!("OP_JUMP\t{} -> {}", offset, ip);
     }
 
     fn jze(&mut self) {
         let offset = self.offset - 1;
         let ip = self.read_u16();
-        println!("OP_JUMP_IF_FALSE\t{} -> {}", offset, ip);
+        eprintln!("OP_JUMP_IF_FALSE\t{} -> {}", offset, ip);
     }
 
     fn op_loop(&mut self) {
         let sub = self.read_u16() as usize;
-        println!("OP_LOOP\t{} -> {}", self.offset, self.offset - sub);
+        eprintln!("OP_LOOP\t{} -> {}", self.offset, self.offset - sub);
     }
 
     fn get_global(&mut self) {
         let val = self.read_constant();
-        println!("OP_GET_GLOBAL\t{}", val.with_heap(self.heap));
+        eprintln!("OP_GET_GLOBAL\t{}", val.with_heap(self.heap));
     }
 
     fn set_global(&mut self) {
         let val = self.read_constant();
-        println!("OP_SET_GLOBAL\t{}", val.with_heap(self.heap));
+        eprintln!("OP_SET_GLOBAL\t{}", val.with_heap(self.heap));
     }
 
     fn define_global(&mut self) {
         let val = self.read_constant();
-        println!("OP_DEFINE_GLOBAL\t{}", val.with_heap(self.heap));
+        eprintln!("OP_DEFINE_GLOBAL\t{}", val.with_heap(self.heap));
     }
 
     fn get_local(&mut self) {
         let val = self.read_byte();
-        println!("OP_GET_LOCAL\t{}", val);
+        eprintln!("OP_GET_LOCAL\t{}", val);
     }
 
     fn set_local(&mut self) {
         let val = self.read_byte();
-        println!("OP_SET_LOCAL\t{}", val);
+        eprintln!("OP_SET_LOCAL\t{}", val);
     }
 
     fn immediate(&mut self) {
@@ -121,43 +121,43 @@ impl<'c> Disassembler<'c> {
             (b7 << 48) +
             (b8 << 56);
         let val = unsafe { Value::from_raw(raw) };
-        println!("OP_FLOAT\t{}", val.with_heap(self.heap));
+        eprintln!("OP_FLOAT\t{}", val.with_heap(self.heap));
     }
 
     fn imm_nil(&self) {
-        println!("OP_NIL");
+        eprintln!("OP_NIL");
     }
 
     fn imm_true(&self) {
-        println!("OP_TRUE");
+        eprintln!("OP_TRUE");
     }
 
     fn imm_false(&self) {
-        println!("OP_FALSE");
+        eprintln!("OP_FALSE");
     }
 
     fn call(&self, arity: u8) {
-        println!("OP_CALL_{}", arity);
+        eprintln!("OP_CALL_{}", arity);
     }
 
     fn invoke(&mut self, arity: u8) {
         let idx = self.read_byte();
         let val = self.chunk.get_constant(idx).expect("invalid constant segment index");
-        println!("OP_INVOKE_{} {}", arity, val.with_heap(&self.heap));
+        eprintln!("OP_INVOKE_{} {}", arity, val.with_heap(&self.heap));
     }
 
     fn close_upvalue(&self) {
-        println!("OP_CLOSE_UPVALUE");
+        eprintln!("OP_CLOSE_UPVALUE");
     }
 
     fn get_upvalue(&mut self) {
         let index = self.read_byte();
-        println!("OP_GET_UPVALUE\t{}", index);
+        eprintln!("OP_GET_UPVALUE\t{}", index);
     }
 
     fn set_upvalue(&mut self) {
         let index = self.read_byte();
-        println!("OP_SET_UPVALE\t{}", index);
+        eprintln!("OP_SET_UPVALE\t{}", index);
     }
 
     fn closure(&mut self) {
@@ -178,25 +178,25 @@ impl<'c> Disassembler<'c> {
                 print!("U{}", index);
             }
         }
-        println!();
+        eprintln!();
     }
 
     fn class(&mut self, idx: u8) {
         let val = self.chunk.get_constant(idx).expect("invalid constant segment index");
         let methods = self.read_byte();
-        println!("OP_CLASS\t{}\t{}\t({} method(s))", idx, val.with_heap(&self.heap), methods);
+        eprintln!("OP_CLASS\t{}\t{}\t({} method(s))", idx, val.with_heap(&self.heap), methods);
     }
 
     fn get_property(&mut self) {
         let idx = self.read_byte();
         let val = self.chunk.get_constant(idx).expect("invalid constant segment index");
-        println!("GET_PROPERTY\t{}\t{}", idx, val.with_heap(&self.heap));
+        eprintln!("GET_PROPERTY\t{}\t{}", idx, val.with_heap(&self.heap));
     }
 
     fn set_property(&mut self) {
         let idx = self.read_byte();
         let val = self.chunk.get_constant(idx).expect("invalid constant segment index");
-        println!("SET_PROPERTY\t{}\t{}", idx, val.with_heap(&self.heap));
+        eprintln!("SET_PROPERTY\t{}\t{}", idx, val.with_heap(&self.heap));
     }
 
     fn read_byte(&mut self) -> u8 {
